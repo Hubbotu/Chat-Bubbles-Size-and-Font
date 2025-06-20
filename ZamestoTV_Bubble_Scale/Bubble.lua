@@ -50,10 +50,16 @@ fontDropdown:SetPoint("TOP", sizeEditBox, "BOTTOM", 0, -20)
 UIDropDownMenu_SetWidth(fontDropdown, 150)
 
 -- Font options
+-- Font options
 local fontOptions = {
     { text = "Default", value = "default" },
     { text = "Literata", value = "Interface\\AddOns\\"..addonName.."\\Literata.ttf" },
-    { text = "Noto", value = "Interface\\AddOns\\"..addonName.."\\front.ttf" }
+    { text = "Noto", value = "Interface\\AddOns\\"..addonName.."\\front.ttf" },
+    { text = "Arial", value = "Fonts\\ARIALN.ttf" },
+    { text = "Roboto", value = "Interface\\AddOns\\"..addonName.."\\Roboto.ttf" },
+    { text = "Open Sans", value = "Interface\\AddOns\\"..addonName.."\\OpenSans.ttf" },
+    { text = "Merriweather", value = "Interface\\AddOns\\"..addonName.."\\Merriweather.ttf" },
+    { text = "Caveat", value = "Interface\\AddOns\\"..addonName.."\\Caveat.ttf" }
 }
 
 -- Store the default font
