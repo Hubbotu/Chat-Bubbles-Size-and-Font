@@ -5,8 +5,8 @@
 ## Notes-ruRU: Меняет размер пузырей чата и шрифт
 ## Author: ZamestoTV
 ## IconTexture: Interface\AddOns\ZamestoTV_Bubble_Scale\Media\goblin
-## Version: 3.21
-## SavedVariables: FreeChatDB, ZamestoTVBubbleScaleDB, SpamFilterDB
+## Version: 4.05
+## SavedVariables: FreeChatDB, ZamestoTVBubbleScaleDB, SpamFilterDB, NoChatBubblesInInstancesDB
 
 ## Category-enUS: Addons ZamestoTV
 ## Category-ruRU: Аддоны ZamestoTV
@@ -16,3 +16,4 @@ Chat.lua
 Copy.lua
 link.lua
 Spam.lua
+Hide.lua

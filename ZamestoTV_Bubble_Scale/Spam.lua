@@ -26,17 +26,25 @@ local function SplitWords(input)
     return words
 end
 
--- Function to save filter words to SavedVariables
-local function SaveFilterWords()
+-- Function to save filter words and input text to SavedVariables
+local function SaveFilterData(input)
     SpamFilterDB = SpamFilterDB or {}
-    SpamFilterDB.words = SpamFilter.wordsToFilter
+    SpamFilterDB.words = SplitWords(input)
+    SpamFilterDB.inputText = input -- Store raw input text
+    SpamFilter.wordsToFilter = SpamFilterDB.words
 end
 
--- Function to load filter words from SavedVariables
-local function LoadFilterWords()
-    if SpamFilterDB and SpamFilterDB.words then
-        SpamFilter.wordsToFilter = SpamFilterDB.words
+-- Function to load filter words and input text from SavedVariables
+local function LoadFilterData()
+    if SpamFilterDB then
+        if SpamFilterDB.words then
+            SpamFilter.wordsToFilter = SpamFilterDB.words
+        end
+        if SpamFilterDB.inputText then
+            return SpamFilterDB.inputText
+        end
     end
+    return ""
 end
 
 -- Function to check if a message contains any filtered words
@@ -68,14 +76,13 @@ local function CreateConfigWindow()
 
     -- Input field
     frame.editBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    frame.editBox:SetSize(350, 30)
+    frame.editBox:SetSize(350, 70) -- Increased height from 50 to 70
     frame.editBox:SetPoint("TOP", 0, -50)
     frame.editBox:SetAutoFocus(false)
-    frame.editBox:SetText(table.concat(SpamFilter.wordsToFilter, ", "))
+    frame.editBox:SetText(LoadFilterData()) -- Load saved input text
     frame.editBox:SetScript("OnEnterPressed", function(self)
         local input = self:GetText()
-        SpamFilter.wordsToFilter = SplitWords(input)
-        SaveFilterWords()
+        SaveFilterData(input)
         print("SpamFilter: Updated filter words.")
         self:ClearFocus()
     end)
@@ -95,8 +102,7 @@ local function CreateConfigWindow()
     frame.saveButton:SetText("Save")
     frame.saveButton:SetScript("OnClick", function()
         local input = frame.editBox:GetText()
-        SpamFilter.wordsToFilter = SplitWords(input)
-        SaveFilterWords()
+        SaveFilterData(input)
         print("SpamFilter: Filter words saved.")
         frame:Hide()
     end)
@@ -119,6 +125,7 @@ SlashCmdList["SPAMFILTER"] = function(msg)
     if not SpamFilter.configFrame then
         SpamFilter.configFrame = CreateConfigWindow()
     end
+    SpamFilter.configFrame.editBox:SetText(LoadFilterData()) -- Update edit box with saved text
     SpamFilter.configFrame:Show()
 end
 
@@ -135,11 +142,11 @@ for _, event in ipairs(SpamFilter.chatChannels) do
     ChatFrame_AddMessageEventFilter(event, ChatFilter)
 end
 
--- Load saved words on addon load
+-- Load saved data on addon load
 SpamFilter:RegisterEvent("ADDON_LOADED")
 SpamFilter:SetScript("OnEvent", function(self, event, addonName)
     if event == "ADDON_LOADED" and addonName == "SpamFilter" then
-        LoadFilterWords()
+        LoadFilterData()
     end
 end)
 
