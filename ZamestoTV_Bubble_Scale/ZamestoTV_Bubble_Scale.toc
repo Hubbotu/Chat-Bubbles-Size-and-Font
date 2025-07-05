@@ -1,15 +1,18 @@
 ## Interface: 110107
-## Title: Chat bubble size and font
+## Title: Chat Helper
 ## Title-ruRU: Размер пузырей чата и шрифт
 ## Notes: Changes the size of chat bubbles and font
 ## Notes-ruRU: Меняет размер пузырей чата и шрифт
 ## Author: ZamestoTV
-## IconTexture: Interface\AddOns\ZamestoTV_Bubble_Scale\Icons\goblin
-## Version: 2.1
-## SavedVariables: FreeChatDB
+## IconTexture: Interface\AddOns\ZamestoTV_Bubble_Scale\Media\goblin
+## Version: 3.21
+## SavedVariables: FreeChatDB, ZamestoTVBubbleScaleDB, SpamFilterDB
 
 ## Category-enUS: Addons ZamestoTV
 ## Category-ruRU: Аддоны ZamestoTV
 
 Bubble.lua
-
+Chat.lua
+Copy.lua
+link.lua
+Spam.lua
