@@ -7,6 +7,7 @@
 ## IconTexture: Interface\AddOns\ZamestoTV_Bubble_Scale\Media\goblin
 ## Version: 4.05
 ## SavedVariables: FreeChatDB, ZamestoTVBubbleScaleDB, SpamFilterDB, NoChatBubblesInInstancesDB
+## SavedVariables: SpamFilterDB
 
 ## Category-enUS: Addons ZamestoTV
 ## Category-ruRU: Аддоны ZamestoTV

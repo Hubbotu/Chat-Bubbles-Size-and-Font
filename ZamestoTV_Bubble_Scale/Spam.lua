@@ -1,9 +1,12 @@
 -- SpamFilter addon for World of Warcraft
+
 -- Filters chat messages containing specified words
 
 -- Create the addon frame
 local SpamFilter = CreateFrame("Frame", "SpamFilterFrame", UIParent)
+
 SpamFilter.wordsToFilter = {}
+
 SpamFilter.chatChannels = {
     "CHAT_MSG_CHANNEL",
     "CHAT_MSG_SAY",
@@ -31,7 +34,7 @@ local function SaveFilterData(input)
     SpamFilterDB = SpamFilterDB or {}
     SpamFilterDB.words = SplitWords(input)
     SpamFilterDB.inputText = input -- Store raw input text
-    SpamFilter.wordsToFilter = SpamFilterDB.words
+    SpamFilter.wordsToFilter = SpamFilterDB.words or {}
 end
 
 -- Function to load filter words and input text from SavedVariables
@@ -39,10 +42,14 @@ local function LoadFilterData()
     if SpamFilterDB then
         if SpamFilterDB.words then
             SpamFilter.wordsToFilter = SpamFilterDB.words
+        else
+            SpamFilter.wordsToFilter = {}
         end
         if SpamFilterDB.inputText then
             return SpamFilterDB.inputText
         end
+    else
+        SpamFilter.wordsToFilter = {}
     end
     return ""
 end
@@ -51,7 +58,7 @@ end
 local function ContainsFilteredWord(message)
     message = message:lower()
     for _, word in ipairs(SpamFilter.wordsToFilter) do
-        if message:find(word, 1, true) then
+        if word ~= "" and message:find(word, 1, true) then
             return true
         end
     end
@@ -76,10 +83,10 @@ local function CreateConfigWindow()
 
     -- Input field
     frame.editBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    frame.editBox:SetSize(350, 70) -- Increased height from 50 to 70
+    frame.editBox:SetSize(350, 70)
     frame.editBox:SetPoint("TOP", 0, -50)
     frame.editBox:SetAutoFocus(false)
-    frame.editBox:SetText(LoadFilterData()) -- Load saved input text
+    frame.editBox:SetText(LoadFilterData())
     frame.editBox:SetScript("OnEnterPressed", function(self)
         local input = self:GetText()
         SaveFilterData(input)
@@ -125,7 +132,7 @@ SlashCmdList["SPAMFILTER"] = function(msg)
     if not SpamFilter.configFrame then
         SpamFilter.configFrame = CreateConfigWindow()
     end
-    SpamFilter.configFrame.editBox:SetText(LoadFilterData()) -- Update edit box with saved text
+    SpamFilter.configFrame.editBox:SetText(LoadFilterData())
     SpamFilter.configFrame:Show()
 end
 
@@ -142,13 +149,13 @@ for _, event in ipairs(SpamFilter.chatChannels) do
     ChatFrame_AddMessageEventFilter(event, ChatFilter)
 end
 
--- Load saved data on addon load
+-- Load saved data on addon load and player login for reliability
 SpamFilter:RegisterEvent("ADDON_LOADED")
-SpamFilter:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" and addonName == "SpamFilter" then
+SpamFilter:RegisterEvent("PLAYER_LOGIN")
+SpamFilter:SetScript("OnEvent", function(self, event, arg1)
+    if (event == "ADDON_LOADED" and arg1 == "SpamFilter") or event == "PLAYER_LOGIN" then
         LoadFilterData()
     end
 end)
 
--- Print addon loaded message
 print("SpamFilter: Loaded. Use /spam to configure.")
