@@ -1,4 +1,4 @@
-## Interface: 110107
+## Interface: 110207, 120000
 ## Title: Chat Helper
 ## Title-ruRU: Размер пузырей чата и шрифт
 ## Notes: Changes the size of chat bubbles and font
@@ -18,3 +18,4 @@ Copy.lua
 link.lua
 Spam.lua
 Hide.lua
+Key.lua
