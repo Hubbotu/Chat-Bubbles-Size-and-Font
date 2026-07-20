@@ -35,21 +35,14 @@ local function HandleChatMessage(eventName, chatText, ...)
     if not chatText then
         return
     end
-
-    -- Переводим TRIGGER_WORDS обратно в хэш-таблицу для мгновенного поиска
-    -- Используем pcall (Protected Call) для безопасного извлечения первого слова.
-    -- Глобальная функция strmatch (в отличие от string.match) в WoW умеет работать в pcall с защищенными строками.
     local success, firstWord = pcall(strmatch, chatText, "^%s*(%S+)")
     
-    -- Если pcall упал или слово не найдено, выходим
     if not success or not firstWord then
         return
     end
 
-    -- Безопасно переводим выделенное слово в нижний регистр (оно уже не secret string)
     local cleanedWord = string.lower(firstWord)
 
-    -- Проверяем триггер
     if not TRIGGER_WORDS[cleanedWord] then
         return
     end
