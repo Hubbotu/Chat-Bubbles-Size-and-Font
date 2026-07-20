@@ -13,13 +13,6 @@ local CHAT_CHANNEL_BY_EVENT = {
     CHAT_MSG_GUILD        = "GUILD",
 }
 
-local function NormalizeText(text)
-    if type(text) ~= "string" then
-        return ""
-    end
-    return text:lower():gsub("^%s+", ""):gsub("%s+$", "")
-end
-
 local function LocateMythicKey()
     local totalBags = NUM_BAG_SLOTS + BACKPACK_CONTAINER + 1
 
@@ -38,22 +31,26 @@ local function LocateMythicKey()
     return nil
 end
 
-local function IsTriggerMessage(text)
-    local normalized = NormalizeText(text)
-    return TRIGGER_WORDS[normalized] == true
-end
-
 local function HandleChatMessage(eventName, chatText, ...)
-    if InCombatLockdown() then
+    if not chatText then
         return
     end
 
-    -- Защита от не-строковых значений (secret value и прочее)
-    if type(chatText) ~= "string" then
+    -- Переводим TRIGGER_WORDS обратно в хэш-таблицу для мгновенного поиска
+    -- Используем pcall (Protected Call) для безопасного извлечения первого слова.
+    -- Глобальная функция strmatch (в отличие от string.match) в WoW умеет работать в pcall с защищенными строками.
+    local success, firstWord = pcall(strmatch, chatText, "^%s*(%S+)")
+    
+    -- Если pcall упал или слово не найдено, выходим
+    if not success or not firstWord then
         return
     end
 
-    if not IsTriggerMessage(chatText) then
+    -- Безопасно переводим выделенное слово в нижний регистр (оно уже не secret string)
+    local cleanedWord = string.lower(firstWord)
+
+    -- Проверяем триггер
+    if not TRIGGER_WORDS[cleanedWord] then
         return
     end
 
