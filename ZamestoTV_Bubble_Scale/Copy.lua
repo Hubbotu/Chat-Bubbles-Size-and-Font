@@ -74,11 +74,19 @@ SlashCmdList["COPYCHAT"] = function(msg)
     end
 
     local text = ""
-    for i = #ChatFrame1.visibleLines, 1, -1 do
-        local line = ChatFrame1.visibleLines[i]
-        if line and line.messageInfo and line.messageInfo.message then
-            text = text .. line.messageInfo.message .. "\n"
+    local success = pcall(function()
+        if ChatFrame1.visibleLines then
+            for i = #ChatFrame1.visibleLines, 1, -1 do
+                local line = ChatFrame1.visibleLines[i]
+                if line and line.messageInfo and line.messageInfo.message then
+                    text = text .. line.messageInfo.message .. "\n"
+                end
+            end
         end
+    end)
+
+    if not success then
+        text = "Failed to copy chat: access restricted while in battlegrounds/arenas.\n"
     end
 
     DisplayText(text, param)
