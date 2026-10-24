@@ -1,0 +1,18 @@
+## Interface: 120000
+## Title: ZamestoTV Chat Helper
+## Notes: Themeable chat bar, copy window, spam filter, clickable links, !key responder and other chat quality-of-life features.
+## Author: ZamestoTV
+## Version: 5.1
+## SavedVariables: ZamestoTVChatDB, ZamestoTVBubbleScaleDB, SpamFilterDB, FreeChatDB, NoChatBubblesInInstancesDB
+## OptionalDeps: LibSharedMedia-3.0
+## IconTexture: Interface\Icons\INV_Misc_Note_01
+
+Core.lua
+UI.lua
+Features.lua
+Key.lua
+Spam.lua
+Copy.lua
+Hide.lua
+ChatBar.lua
+Config.lua
