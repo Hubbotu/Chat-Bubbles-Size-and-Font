@@ -77,6 +77,31 @@ function ns.Hex(r, g, b)
         math.floor((r or 1) * 255 + 0.5), math.floor((g or 1) * 255 + 0.5), math.floor((b or 1) * 255 + 0.5))
 end
 
+-- Midnight (12.0) blocks addon-initiated chat during encounters, M+ runs and
+-- PvP matches. Calling SendChatMessage then raises ADDON_ACTION_BLOCKED, so
+-- we check first and simply do nothing while restricted.
+function ns.ChatLocked()
+    local ci = _G.C_ChatInfo
+    if not ci then return false end
+    if ci.InChatMessagingLockdown then
+        local ok, locked = pcall(ci.InChatMessagingLockdown)
+        if ok and locked then return true end
+    end
+    if ci.AreOutgoingAddonChatMessagesRestricted then
+        local ok, restricted = pcall(ci.AreOutgoingAddonChatMessagesRestricted)
+        if ok and restricted then return true end
+    end
+    return false
+end
+
+-- Returns true if the message was handed to the game, false if it was held back.
+function ns.SendChat(msg, channel, ...)
+    if ns.ChatLocked() then return false end
+    local send = (_G.C_ChatInfo and _G.C_ChatInfo.SendChatMessage) or _G.SendChatMessage
+    send(msg, channel, ...)
+    return true
+end
+
 function ns.Debounce(fn, delay)
     local pending = false
     return function()

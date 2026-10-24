@@ -46,7 +46,9 @@ end
 function Key:Ask()
     local channel = self:GroupChannel()
     if channel then
-        SendChatMessage("!key", channel)
+        if not ns.SendChat("!key", channel) then
+            ns:Print("Chat messages from addons are blocked right now (encounter, Mythic+ or PvP).")
+        end
     else
         ns:Print(self:Locate() or "I don't have a key.")
     end
@@ -66,11 +68,13 @@ local function OnChat(event, text)
     if not channel then return end
 
     -- The same line can trigger several events; answer at most once every few seconds.
+    if ns.ChatLocked() then return end
     local now = GetTime()
     if now - lastReply < 3 then return end
     lastReply = now
 
-    SendChatMessage(Key:Locate() or "I don't have a key.", channel)
+    -- During an encounter / M+ / PvP the game forbids addon chat; stay silent then.
+    ns.SendChat(Key:Locate() or "I don't have a key.", channel)
 end
 
 function Key:OnInit()

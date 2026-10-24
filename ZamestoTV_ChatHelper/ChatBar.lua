@@ -56,12 +56,32 @@ end
 ---------------------------------------------------------------------------
 -- Helpers
 ---------------------------------------------------------------------------
+-- Fallback only: ChatEdit_SendText is a deprecated alias in 12.0.
 local function RunSlash(text)
     local eb = ChatFrame1EditBox
-    if not eb then return end
+    if not eb or not _G.ChatEdit_SendText then
+        ns:Print("This action is not available on this client version.")
+        return
+    end
     eb:SetText(text)
     ChatEdit_SendText(eb, 0)
     eb:SetText("")
+end
+
+local function Countdown(seconds)
+    if C_PartyInfo and C_PartyInfo.DoCountdown then
+        C_PartyInfo.DoCountdown(seconds)
+    else
+        RunSlash("/countdown " .. seconds)
+    end
+end
+
+local function ReadyCheck()
+    if _G.DoReadyCheck then
+        DoReadyCheck()
+    else
+        RunSlash("/readycheck")
+    end
 end
 
 local function CanOfficer()
@@ -102,9 +122,9 @@ for n = 1, 10 do
 end
 
 local tools = {
-    { id = "kd5",  label = "5",  long = "Pull 5",  color = { 1, 0, 1 },         desc = "Countdown 5",  hint = "Starts a 5 second pull timer",  action = function() RunSlash("/countdown 5") end },
-    { id = "kd10", label = "10", long = "Pull 10", color = { 0.75, 0, 1 },      desc = "Countdown 10", hint = "Starts a 10 second pull timer", action = function() RunSlash("/countdown 10") end },
-    { id = "rc",   label = "RC", long = "Ready",   color = { 1, 0.25, 0.25 },   desc = "Ready check",  hint = "Starts a ready check",          action = function() RunSlash("/readycheck") end },
+    { id = "kd5",  label = "5",  long = "Pull 5",  color = { 1, 0, 1 },         desc = "Countdown 5",  hint = "Starts a 5 second pull timer",  action = function() Countdown(5) end },
+    { id = "kd10", label = "10", long = "Pull 10", color = { 0.75, 0, 1 },      desc = "Countdown 10", hint = "Starts a 10 second pull timer", action = function() Countdown(10) end },
+    { id = "rc",   label = "RC", long = "Ready",   color = { 1, 0.25, 0.25 },   desc = "Ready check",  hint = "Starts a ready check",          action = function() ReadyCheck() end },
     { id = "key",  label = "K",  long = "Key",     color = { 0, 1, 1 },         desc = "Keystone information", hint = "Asks the group for keystones (!key)", action = function() ns.Key:Ask() end },
     { id = "copy", label = "CP", long = "Copy",    color = { 1, 1, 0 },         desc = "Copy chat",    hint = "Right-click: open settings",    action = function() ns.Copy:Open() end },
     { id = "roll", label = "RL", long = "Roll",    color = { 0.9, 0.8, 0.5 },   desc = "Roll 1-100",   hint = "Rolls a random number",         action = function() RandomRoll(1, 100) end },
@@ -586,7 +606,7 @@ function Bar:RegisterSlash()
     cmd("ZTVBOOMUP", "/boomup", nudge(1))
     cmd("ZTVBOOMDOWN", "/boomdown", nudge(-1))
 
-    cmd("ZTVKD5", "/kd5", function() RunSlash("/countdown 5") end)
-    cmd("ZTVKD10", "/kd10", function() RunSlash("/countdown 10") end)
-    cmd("ZTVRDC", "/rdc", function() RunSlash("/readycheck") end)
+    cmd("ZTVKD5", "/kd5", function() Countdown(5) end)
+    cmd("ZTVKD10", "/kd10", function() Countdown(10) end)
+    cmd("ZTVRDC", "/rdc", function() ReadyCheck() end)
 end
