@@ -362,7 +362,7 @@ local function BuildGeneral()
     Sync(p)
 
     Check(p, "L", "Answer !key requests", ns.db.key, "enabled", nil,
-        "Answer !key requests", "When someone types !key in party, raid, guild or instance chat, your keystone is posted back.")
+        "Answer !key requests", "When someone types !key in party, raid, guild or instance chat, your keystone is posted back. Nothing is sent while the game locks addon chat (boss fights, Mythic+, PvP).")
     Put(p, "R", UI.Button(p, "Reset all settings...", 100, 26, function()
         StaticPopup_Show("ZTVCHAT_RESET")
     end), 8)

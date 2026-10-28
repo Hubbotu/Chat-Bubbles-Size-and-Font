@@ -23,7 +23,7 @@ ns.presets = {
 ns.defaults = {
     theme = {
         accent = { 0.20, 0.60, 1.00 },
-        bgAlpha = 0.88,
+        bgAlpha = 0,  -- no background behind the buttons (slider on the Appearance page)
         buttonStyle = "CIRCLE", -- see Bar.styles in ChatBar.lua
     },
     ui = { w = 720, h = 520 },
@@ -75,31 +75,6 @@ end
 function ns.Hex(r, g, b)
     return string.format("%02x%02x%02x",
         math.floor((r or 1) * 255 + 0.5), math.floor((g or 1) * 255 + 0.5), math.floor((b or 1) * 255 + 0.5))
-end
-
--- Midnight (12.0) blocks addon-initiated chat during encounters, M+ runs and
--- PvP matches. Calling SendChatMessage then raises ADDON_ACTION_BLOCKED, so
--- we check first and simply do nothing while restricted.
-function ns.ChatLocked()
-    local ci = _G.C_ChatInfo
-    if not ci then return false end
-    if ci.InChatMessagingLockdown then
-        local ok, locked = pcall(ci.InChatMessagingLockdown)
-        if ok and locked then return true end
-    end
-    if ci.AreOutgoingAddonChatMessagesRestricted then
-        local ok, restricted = pcall(ci.AreOutgoingAddonChatMessagesRestricted)
-        if ok and restricted then return true end
-    end
-    return false
-end
-
--- Returns true if the message was handed to the game, false if it was held back.
-function ns.SendChat(msg, channel, ...)
-    if ns.ChatLocked() then return false end
-    local send = (_G.C_ChatInfo and _G.C_ChatInfo.SendChatMessage) or _G.SendChatMessage
-    send(msg, channel, ...)
-    return true
 end
 
 function ns.Debounce(fn, delay)
@@ -206,6 +181,11 @@ ev:SetScript("OnEvent", function(self, event, arg1)
         end
         Merge(ns.db, ns.defaults)
         Migrate(ns.db)
+        -- one-time: earlier versions defaulted to a visible background panel
+        if not ns.db.bgReset then
+            ns.db.theme.bgAlpha = 0
+            ns.db.bgReset = true
+        end
         RunModules("OnInit")
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then

@@ -125,7 +125,7 @@ local tools = {
     { id = "kd5",  label = "5",  long = "Pull 5",  color = { 1, 0, 1 },         desc = "Countdown 5",  hint = "Starts a 5 second pull timer",  action = function() Countdown(5) end },
     { id = "kd10", label = "10", long = "Pull 10", color = { 0.75, 0, 1 },      desc = "Countdown 10", hint = "Starts a 10 second pull timer", action = function() Countdown(10) end },
     { id = "rc",   label = "RC", long = "Ready",   color = { 1, 0.25, 0.25 },   desc = "Ready check",  hint = "Starts a ready check",          action = function() ReadyCheck() end },
-    { id = "key",  label = "K",  long = "Key",     color = { 0, 1, 1 },         desc = "Keystone information", hint = "Asks the group for keystones (!key)", action = function() ns.Key:Ask() end },
+    { id = "key",  label = "K",  long = "Key",     color = { 0, 1, 1 },         desc = "Keystone information", hint = "Posts your keystone in group chat", action = function() ns.Key:Ask() end },
     { id = "copy", label = "CP", long = "Copy",    color = { 1, 1, 0 },         desc = "Copy chat",    hint = "Right-click: open settings",    action = function() ns.Copy:Open() end },
     { id = "roll", label = "RL", long = "Roll",    color = { 0.9, 0.8, 0.5 },   desc = "Roll 1-100",   hint = "Rolls a random number",         action = function() RandomRoll(1, 100) end },
     { id = "cfg",  label = "",   long = "",        color = { 0.7, 0.75, 0.85 }, desc = "Chat Helper settings", icon = SETTINGS_ICON,           action = function() ns.Config:Toggle() end },

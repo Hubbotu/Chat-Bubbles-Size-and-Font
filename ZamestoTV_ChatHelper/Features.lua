@@ -120,17 +120,49 @@ function F:ApplyHistory()
     end
 end
 
+-- Settings imported from the old addon point into its old folder. Redirect
+-- those paths to this addon's folder.
+local OLD_FOLDER = "interface\\addons\\zamestotv_bubble_scale\\"
+local function NormalizeFontPath(path)
+    if type(path) ~= "string" or path == "DEFAULT" then return path end
+    if path:sub(1, #OLD_FOLDER):lower() == OLD_FOLDER then
+        return "Interface\\AddOns\\" .. ADDON .. "\\" .. path:sub(#OLD_FOLDER + 1)
+    end
+    return path
+end
+
+-- On 12.0 SetFont raises an error for a missing file instead of returning
+-- false, so every call that uses a saved path goes through pcall.
+local function TrySetFont(obj, path, size, flags)
+    local ok, res = pcall(obj.SetFont, obj, path, size, flags)
+    return ok and res ~= false
+end
+
 function F:ApplyChatFont()
     local cf1 = _G.ChatFrame1
     if not cf1 then return end
     if not ns.defaultChatFont then ns.defaultChatFont = (cf1:GetFont()) end
-    local path = ns.db.chat.font
+    local o = ns.db.chat
+    o.font = NormalizeFontPath(o.font)
+    local path = o.font
     if not path or path == "DEFAULT" then path = ns.defaultChatFont end
+
+    -- Make sure the saved font can load before touching any chat frame.
+    local probe = self.fontProbe
+    if not probe then
+        probe = UIParent:CreateFontString(nil, "BACKGROUND")
+        self.fontProbe = probe
+    end
+    if not TrySetFont(probe, path, 12, "") then
+        o.font = "DEFAULT"
+        path = ns.defaultChatFont
+    end
+
     for i = 1, NUM_CHAT_WINDOWS do
         local cf = _G["ChatFrame" .. i]
         if cf then
             local _, size, flags = cf:GetFont()
-            if size then cf:SetFont(path, size, flags) end
+            if size then TrySetFont(cf, path, size, flags) end
         end
     end
 end
@@ -142,11 +174,14 @@ function F:ApplyBubbleFont()
         ns.defaultBubble = { p, s, f }
     end
     local d, o = ns.defaultBubble, ns.db.bubbles
+    o.font = NormalizeFontPath(o.font)
     local path = (o.font and o.font ~= "DEFAULT") and o.font or d[1]
     local size = (o.size and o.size > 0) and math.max(8, o.size) or d[2]
     local flags = (path == d[1]) and d[3] or "OUTLINE"
-    if not ChatBubbleFont:SetFont(path, size, flags) then
-        ChatBubbleFont:SetFont(d[1], d[2], d[3])
+    if not TrySetFont(ChatBubbleFont, path, size, flags) then
+        -- the saved font no longer exists: forget it and use the default
+        o.font = "DEFAULT"
+        TrySetFont(ChatBubbleFont, d[1], size, d[3])
     end
 end
 
