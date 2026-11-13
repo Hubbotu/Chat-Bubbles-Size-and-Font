@@ -1,6 +1,7 @@
 local ADDON, ns = ...
 local Key = ns:NewModule("Key")
 local issecret = ns.IsSecret
+local T = ns.T
 
 local MYTHIC_KEY_ITEM_ID = 180653
 
@@ -54,6 +55,17 @@ local function LocateMythicKey()
     return nil
 end
 
+-- Mythic keystones are a retail feature. Only enable the !key responder and the
+-- "K" button when the client actually knows the keystone item.
+local available
+function Key:IsAvailable()
+    if available == nil then
+        local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+        available = getInstant and getInstant(MYTHIC_KEY_ITEM_ID) ~= nil or false
+    end
+    return available
+end
+
 function Key:Locate()
     return LocateMythicKey()
 end
@@ -87,12 +99,13 @@ end
 
 -- Кнопка "K" на панели: отправляет ваш ключ в чат группы
 function Key:Ask()
+    if not self:IsAvailable() then return end
     local channel = self:GroupChannel()
-    local keyLink = LocateMythicKey() or "У меня нет ключа."
+    local keyLink = LocateMythicKey() or T("I don't have a keystone.")
 
     if channel then
         if not Send(keyLink, channel) then
-            ns:Print("Чат заблокирован игрой (бой/М+). Ключ: " .. keyLink)
+            ns:Print(string.format(T("Chat is blocked by the game (fight / Mythic+). Key: %s"), keyLink))
         end
     else
         ns:Print(keyLink)
@@ -125,6 +138,7 @@ local function OnChat(event, text)
 end
 
 function Key:OnInit()
+    if not self:IsAvailable() then return end
     local f = CreateFrame("Frame")
     f:SetScript("OnEvent", function(_, event, text) OnChat(event, text) end)
     for event in pairs(CHANNEL_BY_EVENT) do f:RegisterEvent(event) end

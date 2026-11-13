@@ -2,10 +2,33 @@ local ADDON, ns = ...
 local UI = ns.UI
 local F = ns:NewModule("Features")
 local issecret = ns.IsSecret
+local T = ns.T
 
 ---------------------------------------------------------------------------
 -- Font list (only fonts the client can actually load are offered)
 ---------------------------------------------------------------------------
+-- bundled fonts: display name + file names that are accepted
+ns.BUNDLED_FONTS = {
+    { "Literata", { "Literata.ttf", "Literata-Regular.ttf" } },
+    { "Noto", { "front.ttf", "front1.ttf", "NotoSans-Regular.ttf", "Noto.ttf" } },
+    { "Roboto", { "Roboto.ttf", "Roboto-Regular.ttf" } },
+    { "Open Sans", { "OpenSans.ttf", "OpenSans-Regular.ttf" } },
+    { "Merriweather", { "Merriweather.ttf", "Merriweather-Regular.ttf" } },
+    { "Caveat", { "Caveat.ttf", "Caveat-Regular.ttf" } },
+}
+
+-- the same file in the spellings people tend to end up with (case matters on some systems)
+function ns.FontFileVariants(files)
+    local out, seen = {}, {}
+    for _, f in ipairs(files) do
+        local stem = f:gsub("%.[tT][tT][fF]$", "")
+        for _, v in ipairs({ f, stem .. ".TTF", f:lower(), stem:lower() .. ".ttf" }) do
+            if not seen[v] then seen[v] = true; out[#out + 1] = v end
+        end
+    end
+    return out
+end
+
 function ns:GetFonts()
     if self.fontList then return self.fontList end
     local test = UIParent:CreateFontString(nil, "BACKGROUND")
@@ -18,7 +41,9 @@ function ns:GetFonts()
         local ok, valid = pcall(test.SetFont, test, path, 12, "")
         if ok and valid then
             seen[key] = true
-            list[#list + 1] = { text = name, value = path }
+            -- fonts that cannot draw Cyrillic are marked so they are not chosen by mistake
+            local label = ns.SupportsCyrillic(path) and name or (name .. " " .. T("(Latin only)"))
+            list[#list + 1] = { text = label, value = path }
         end
     end
     local base = "Interface\\AddOns\\" .. ADDON .. "\\"
@@ -26,12 +51,19 @@ function ns:GetFonts()
     add("Arial Narrow", "Fonts\\ARIALN.ttf")
     add("Morpheus", "Fonts\\MORPHEUS.ttf")
     add("Skurri", "Fonts\\SKURRI.ttf")
-    add("Literata", base .. "Literata.ttf")
-    add("Noto", base .. "front.ttf")
-    add("Roboto", base .. "Roboto.ttf")
-    add("Open Sans", base .. "OpenSans.ttf")
-    add("Merriweather", base .. "Merriweather.ttf")
-    add("Caveat", base .. "Caveat.ttf")
+    for _, entry in ipairs(ns.BUNDLED_FONTS) do
+        local before = #list
+        for _, file in ipairs(ns.FontFileVariants(entry[2])) do
+            add(entry[1], ns.FONT_DIR .. file)          -- Interface\AddOns\<addon>\font\
+            if #list > before then break end
+        end
+        if #list == before then                         -- not moved yet: the old location
+            for _, file in ipairs(ns.FontFileVariants(entry[2])) do
+                add(entry[1], base .. file)
+                if #list > before then break end
+            end
+        end
+    end
 
     local LSM = _G.LibStub and _G.LibStub("LibSharedMedia-3.0", true)
     if LSM then
@@ -98,7 +130,7 @@ end
 
 function F:ApplyArrows()
     local free = ns.db.chat.freeArrows
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local eb = _G["ChatFrame" .. i .. "EditBox"]
         if eb then eb:SetAltArrowKeyMode(not free) end
     end
@@ -114,28 +146,54 @@ end
 function F:ApplyHistory()
     local n = ns.db.chat.history
     if not n or n < 128 then return end
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local cf = _G["ChatFrame" .. i]
         if cf and cf.SetMaxLines then pcall(cf.SetMaxLines, cf, n) end
     end
 end
 
--- Settings imported from the old addon point into its old folder. Redirect
--- those paths to this addon's folder.
+-- Fonts bundled with the addon live in the "font" folder. Saved settings may
+-- still point to the addon root (older versions) or to the old addon's folder:
+-- move those paths to the new location, or keep the old one if the file has
+-- not been moved yet.
 local OLD_FOLDER = "interface\\addons\\zamestotv_bubble_scale\\"
-local function NormalizeFontPath(path)
-    if type(path) ~= "string" or path == "DEFAULT" then return path end
-    if path:sub(1, #OLD_FOLDER):lower() == OLD_FOLDER then
-        return "Interface\\AddOns\\" .. ADDON .. "\\" .. path:sub(#OLD_FOLDER + 1)
-    end
-    return path
-end
+local BUNDLED = {
+    ["literata.ttf"] = true, ["front.ttf"] = true, ["front1.ttf"] = true, ["roboto.ttf"] = true,
+    ["opensans.ttf"] = true, ["merriweather.ttf"] = true, ["caveat.ttf"] = true,
+}
 
 -- On 12.0 SetFont raises an error for a missing file instead of returning
 -- false, so every call that uses a saved path goes through pcall.
 local function TrySetFont(obj, path, size, flags)
     local ok, res = pcall(obj.SetFont, obj, path, size, flags)
     return ok and res ~= false
+end
+
+local function CanLoad(path)
+    local probe = F.fontProbe
+    if not probe then
+        probe = UIParent:CreateFontString(nil, "BACKGROUND")
+        F.fontProbe = probe
+    end
+    return TrySetFont(probe, path, 12, "")
+end
+
+local function NormalizeFontPath(path)
+    if type(path) ~= "string" or path == "DEFAULT" then return path end
+    local lower = path:lower()
+    local root = "interface\\addons\\" .. ADDON:lower() .. "\\"
+    local file = lower:sub(1, #OLD_FOLDER) == OLD_FOLDER and lower:sub(#OLD_FOLDER + 1)
+        or (lower:sub(1, #root) == root and lower:sub(#root + 1))
+    if file and BUNDLED[file] then
+        local name = path:match("([^\\]+)$")
+        local new = ns.FONT_DIR .. name
+        if CanLoad(new) then return new end
+        return "Interface\\AddOns\\" .. ADDON .. "\\" .. name
+    end
+    if lower:sub(1, #OLD_FOLDER) == OLD_FOLDER then
+        return "Interface\\AddOns\\" .. ADDON .. "\\" .. path:sub(#OLD_FOLDER + 1)
+    end
+    return path
 end
 
 function F:ApplyChatFont()
@@ -158,7 +216,7 @@ function F:ApplyChatFont()
         path = ns.defaultChatFont
     end
 
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local cf = _G["ChatFrame" .. i]
         if cf then
             local _, size, flags = cf:GetFont()
@@ -219,10 +277,14 @@ local function Linkify(text)
     return s:sub(2)
 end
 
-local function Process(text)
+local function Process(text, cf)
     local o = ns.db.chat
     if o.shortChannels then text = Shorten(text) end
     if o.urls then text = Linkify(text) end
+    for _, fn in ipairs(ns.processors) do
+        local ok, res = pcall(fn, text, cf)
+        if ok and type(res) == "string" then text = res end
+    end
     return text
 end
 
@@ -232,20 +294,24 @@ local function HookFrame(cf)
     local orig = cf.AddMessage
     cf.AddMessage = function(self, text, ...)
         if type(text) == "string" and not issecret(text) then
-            local ok, res = pcall(Process, text)
+            local ok, res = pcall(Process, text, self)
             if ok and type(res) == "string" then text = res end
         end
         return orig(self, text, ...)
     end
     cf:HookScript("OnHyperlinkClick", function(_, link)
-        if type(link) == "string" and link:sub(1, 7) == "ztvurl:" then
-            ns:ShowURL(link:sub(8))
+        if type(link) == "string" then
+            if link:sub(1, 7) == "ztvurl:" then
+                ns:ShowURL(link:sub(8))
+            elseif link:sub(1, 7) == "ztvmsg:" and ns.Messenger then
+                ns.Messenger:Open(link:sub(8))
+            end
         end
     end)
 end
 
 function F:HookFrames()
-    for i = 1, NUM_CHAT_WINDOWS do HookFrame(_G["ChatFrame" .. i]) end
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do HookFrame(_G["ChatFrame" .. i]) end
 end
 
 ---------------------------------------------------------------------------
@@ -271,7 +337,7 @@ function ns:ShowURL(url)
 
         f.title = UI.Text(f, 12)
         f.title:SetPoint("TOPLEFT", 14, -12)
-        f.title:SetText("Copy link")
+        f.title:SetText(T("Copy link"))
         ns:OnTheme(function()
             f.title:SetTextColor(ns:GetAccent())
             f:SetBackdropBorderColor(ns:GetAccent())
@@ -291,7 +357,7 @@ function ns:ShowURL(url)
 
         f.hint = UI.Text(f, 11, C.muted)
         f.hint:SetPoint("BOTTOMLEFT", 14, 12)
-        f.hint:SetText("Press Ctrl+C to copy, then Esc to close.")
+        f.hint:SetText(T("Press Ctrl+C to copy, then Esc to close."))
         self.urlFrame = f
     end
     f.url = url
@@ -413,8 +479,46 @@ function F:Apply()
     self:HookFrames()
 end
 
+-- /ztvfonts : shows which bundled font files the game can load
+function F:DiagnoseFonts()
+    local probe = UIParent:CreateFontString(nil, "BACKGROUND")
+    ns:Print("Fonts folder: " .. ns.FONT_DIR)
+    local found = 0
+    for _, entry in ipairs(ns.BUNDLED_FONTS) do
+        local where
+        for _, dir in ipairs({ ns.FONT_DIR, "Interface\\AddOns\\" .. ADDON .. "\\" }) do
+            for _, file in ipairs(ns.FontFileVariants(entry[2])) do
+                local ok, valid = pcall(probe.SetFont, probe, dir .. file, 12, "")
+                if ok and valid then where = dir .. file break end
+            end
+            if where then break end
+        end
+        if where then found = found + 1 end
+        print(string.format("  %s: %s", entry[1], where and ("|cff40ff40OK|r  " .. where) or "|cffff5050not found|r"))
+    end
+    if found < #ns.BUNDLED_FONTS then
+        print("  The game only detects NEW files when it starts: close World of Warcraft completely and start it again (a /reload is not enough).")
+        print("  Accepted names: " .. table.concat((function() local t = {} for _, e in ipairs(ns.BUNDLED_FONTS) do t[#t + 1] = e[2][1] end return t end)(), ", "))
+    end
+end
+
 function F:OnInit()
-    for _, e in ipairs(KEYWORD_EVENTS) do ChatFrame_AddMessageEventFilter(e, KeywordFilter) end
+    -- /ztvcyr : which font the addon uses and whether it can draw Cyrillic
+    SLASH_ZTVCYR1 = "/ztvcyr"
+    SlashCmdList["ZTVCYR"] = function()
+        local chat = _G.ChatFrame1 and select(1, ChatFrame1:GetFont())
+        local function yes(p) return ns.SupportsCyrillic(p) and "|cff40ff40Cyrillic OK|r" or "|cffff5050no Cyrillic|r" end
+        print("Chat Helper font: " .. tostring(UI.Font()) .. " - " .. yes(UI.Font()))
+        print("Game default font: " .. tostring(STANDARD_TEXT_FONT) .. " - " .. yes(STANDARD_TEXT_FONT))
+        print("Chat window font: " .. tostring(chat) .. " - " .. yes(chat))
+        if chat and not ns.SupportsCyrillic(chat) then
+            print("Russian text in the chat window needs another font: Settings > Fonts > Chat window font.")
+        end
+    end
+
+    SLASH_ZTVFONTS1 = "/ztvfonts"
+    SlashCmdList["ZTVFONTS"] = function() F:DiagnoseFonts() end
+    for _, e in ipairs(KEYWORD_EVENTS) do ns.AddChatFilter(e, KeywordFilter) end
     if _G.FCF_OpenTemporaryWindow then
         hooksecurefunc("FCF_OpenTemporaryWindow", function() F:HookFrames(); F:ApplyChatFont(); F:ApplyArrows() end)
     end

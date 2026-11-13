@@ -2,12 +2,13 @@ local ADDON, ns = ...
 local UI = ns.UI
 local C = UI.C
 local Config = ns:NewModule("Config")
+local T = ns.T
 
 local win, content
 local pages, order, navs = {}, {}, {}
 local current
 
-local KEYS = { appearance = true, bar = true, chat = true, spam = true, fonts = true, general = true }
+local KEYS = { appearance = true, bar = true, chatbox = true, effects = true, looks = true, messenger = true, chat = true, spam = true, fonts = true, general = true }
 local MIN_W, MIN_H, MAX_W, MAX_H = 640, 460, 1200, 900
 
 ---------------------------------------------------------------------------
@@ -21,10 +22,10 @@ local function NewPage(key, name, title, sub)
     p.widgets = {}
     p.heading = UI.Text(p, 18)
     p.heading:SetPoint("TOPLEFT", 24, -20)
-    p.heading:SetText(title)
+    p.heading:SetText(T(title))
     p.sub = UI.Text(p, 11, C.muted)
     p.sub:SetPoint("TOPLEFT", p.heading, "BOTTOMLEFT", 0, -4)
-    p.sub:SetText(sub)
+    p.sub:SetText(T(sub))
     p.L = UI.Stack(p, "L", 76)
     p.R = UI.Stack(p, "R", 76)
     p.F = UI.Stack(p, "F", 76)
@@ -56,7 +57,7 @@ end
 
 local function Label(p, side, text)
     local fs = UI.Text(p, 11, C.muted)
-    fs:SetText(text)
+    fs:SetText(T(text))
     fs:SetHeight(14)
     p[side]:Add(fs, 4)
     return fs
@@ -67,7 +68,7 @@ local function Note(p, side, text, height)
     fs:SetWordWrap(true)
     fs:SetJustifyV("TOP")
     fs:SetHeight(height or 40)
-    fs:SetText(text)
+    fs:SetText(T(text))
     p[side]:Add(fs, 6)
     return fs
 end
@@ -196,7 +197,33 @@ local function BuildBar()
         c:SetPoint("TOPLEFT", p, "TOPLEFT", 24 + col * 172, -(y0 + rowIdx * 26))
         p.widgets[#p.widgets + 1] = c
     end
-    local gridEnd = y0 + math.ceil(#toggles / 3) * 26 + 8
+    -- built-in channels: 1 General, 2 Trade, 3 Defense ...
+    do
+        local i = #toggles + 1
+        local c = UI.Check(p, "Include General / Trade / Defense",
+            function() return o.builtinChannels ~= false end,
+            function(v)
+                o.builtinChannels = v
+                if ns.Bar.UpdateChannelStates then ns.Bar.UpdateChannelStates() end
+                ns.Bar:Refresh()
+            end, "Include General / Trade / Defense",
+            "Adds buttons for the built-in channels (/1 General, /2 Trade, /3 Defense). They only appear while you are in the channel.", 160)
+        c:SetPoint("TOPLEFT", p, "TOPLEFT", 24 + ((i - 1) % 3) * 172, -(y0 + math.floor((i - 1) / 3) * 26))
+        p.widgets[#p.widgets + 1] = c
+    end
+    do
+        local i = #toggles + 2
+        local c2 = UI.Check(p, "One \"Channels\" button with a menu",
+            function() return o.channelMode ~= "BUTTONS" end,
+            function(v)
+                o.channelMode = v and "MENU" or "BUTTONS"
+                ns.Bar:Refresh()
+            end, "One \"Channels\" button with a menu",
+            "A single button shows the current channel and opens a list of your channels (click). The mouse wheel switches channel, right-click writes in the last one. Turn it off for numbered buttons.", 160)
+        c2:SetPoint("TOPLEFT", p, "TOPLEFT", 24 + ((i - 1) % 3) * 172, -(y0 + math.floor((i - 1) / 3) * 26))
+        p.widgets[#p.widgets + 1] = c2
+    end
+    local gridEnd = y0 + math.ceil((#toggles + 2) / 3) * 26 + 8
     local reset = UI.Button(p, "Reset position", 130, 26, function() ns.Bar:ResetPosition() end)
     reset:SetPoint("TOPLEFT", p, "TOPLEFT", 24, -gridEnd)
     local note = UI.Text(p, 11, C.muted)
@@ -259,6 +286,286 @@ local function BuildChat()
     end)
     edit.Refresh = function(self) self:SetValue(k.text) end
     Put(p, "R", edit, 6)
+end
+
+
+---------------------------------------------------------------------------
+-- Chatbox (frame skin + chat bar placement)
+---------------------------------------------------------------------------
+local function BuildChatbox()
+    local p = NewPage("chatbox", "Chatbox", "Chatbox", "A layered frame behind your chat window: style, color, opacity and background.")
+    local o = ns.db.chatbox
+    local apply = function() ns.Chatbox:Apply() end
+    local paint = function() ns.Chatbox:Paint() end
+
+    -- preset colors as clickable chips, plus a free color picker
+    local colorRow = CreateFrame("Frame", nil, p)
+    colorRow:SetSize(100, 108)
+    local lbl = UI.Text(colorRow, 11, C.muted)
+    lbl:SetPoint("TOPLEFT", 0, 0)
+    lbl:SetText(T("Frame color"))
+    local chips = {}
+    for i, pr in ipairs(ns.Chatbox.presets) do
+        local chip = CreateFrame("Button", nil, colorRow, "BackdropTemplate")
+        chip:SetSize(24, 24)
+        chip:SetPoint("TOPLEFT", ((i - 1) % 6) * 30, -20 - math.floor((i - 1) / 6) * 30)
+        UI.Flat(chip, { pr[2][1], pr[2][2], pr[2][3], 1 }, C.border)
+        chip.color = pr[2]
+        chip:SetScript("OnClick", function()
+            o.color = { pr[2][1], pr[2][2], pr[2][3] }
+            paint()
+            colorRow:Refresh()
+        end)
+        UI.Tip(chip, pr[1])
+        chips[i] = chip
+    end
+    local sw = UI.Swatch(colorRow, 24, function() return o.color or ns.Chatbox:StyleColor() end,
+        function(r, g, b) o.color = { r, g, b }; paint(); colorRow:Refresh() end)
+    sw:SetPoint("TOPLEFT", 0, -82)
+    UI.Tip(sw, "Custom color...")
+    local reset = UI.Button(colorRow, "Style default", 110, 24, function()
+        o.color = nil
+        paint()
+        colorRow:Refresh()
+    end)
+    reset:SetPoint("LEFT", sw, "RIGHT", 10, 0)
+    function colorRow:Refresh()
+        local cur = o.color
+        for _, chip in ipairs(chips) do
+            local c = chip.color
+            local sel = cur and math.abs(cur[1] - c[1]) < 0.003 and math.abs(cur[2] - c[2]) < 0.003
+                and math.abs(cur[3] - c[3]) < 0.003
+            if sel then chip:SetBackdropBorderColor(1, 1, 1, 1) else chip:SetBackdropBorderColor(unpack(C.border)) end
+        end
+        sw:Refresh()
+    end
+
+    Check(p, "L", "Enable chatbox", o, "enabled", apply, "Enable chatbox",
+        "Draws a layered frame behind the main chat window and hides Blizzard's own background.")
+    Label(p, "L", "Style")
+    local styles = {}
+    for _, st in ipairs(ns.Chatbox.styles) do styles[#styles + 1] = { text = st.name, value = st.id } end
+    Put(p, "L", UI.Dropdown(p, 100, styles, function() return o.style end,
+        function(v) o.style = v; o.color = nil; paint(); colorRow:Refresh() end), 10)
+    Label(p, "L", "Background")
+    Put(p, "L", UI.Dropdown(p, 100, function() return ns.Chatbox:GetBackgrounds() end,
+        function() return o.bgTexture end,
+        function(v) o.bgTexture = v; paint() end), 10)
+    Put(p, "L", UI.Slider(p, "Background pattern strength", 0, 200, 10, function() return (o.bgStrength or 1) * 100 end,
+        function(v) o.bgStrength = v / 100; paint() end, PercentFmt, 100), 6)
+    Label(p, "L", "Custom texture path (choose \"Custom\" above)")
+    local edit = UI.Edit(p, 100, 24, function(self) o.bgCustom = self:GetText(); paint() end)
+    edit:HookScript("OnTextChanged", function(self, user)
+        if user then o.bgCustom = self:GetText(); paint() end
+    end)
+    edit.Refresh = function(self) self:SetText(o.bgCustom or "") end
+    Put(p, "L", edit, 8)
+    Check(p, "L", "Show border and decorations", o, "border", paint)
+    Check(p, "R", "Tile the custom texture", o, "bgTile", paint)
+
+    Put(p, "R", UI.Slider(p, "Background opacity", 0, 100, 5, function() return o.alpha * 100 end,
+        function(v) o.alpha = v / 100; paint() end, PercentFmt, 100), 6)
+    Put(p, "R", UI.Slider(p, "Texture strength (grid, scanlines, grain)", 0, 200, 10, function() return o.texStrength * 100 end,
+        function(v) o.texStrength = v / 100; paint() end, PercentFmt, 100), 6)
+    Put(p, "R", colorRow, 6)
+    Sync(p)
+
+    Header(p, "Parts of the frame")
+    Check(p, "L", "Include the tab strip", o, "includeTabs", apply)
+    Check(p, "R", "Restyle the chat input box", o, "skinEdit", paint)
+    Put(p, "L", UI.Slider(p, "Padding around the chat", 0, 20, 1, function() return o.padding end,
+        function(v) o.padding = v; ns.Chatbox:UpdateDock() end, nil, 100), 6)
+end
+
+local function BuildEffects()
+    local p = NewPage("effects", "Effects & Panel", "Effects & Panel", "Border glow, the left panel with emoji and online counts, and where the chat bar sits.")
+    local o = ns.db.chatbox
+    local paint = function() ns.Chatbox:Paint() end
+    local apply = function() ns.Chatbox:Apply() end
+
+    Label(p, "L", "Border glow")
+    Put(p, "L", UI.Dropdown(p, 100, {
+        { text = "Off", value = "OFF" },
+        { text = "Style default", value = "STYLE" },
+        { text = "Accent color", value = "ACCENT" },
+        { text = "Rainbow", value = "RGB" },
+        { text = "Custom color", value = "CUSTOM" },
+    }, function() return o.glowMode end, function(v) o.glowMode = v; paint() end), 10)
+    Put(p, "L", UI.Slider(p, "Glow strength", 0, 200, 10, function() return o.glowIntensity * 100 end,
+        function(v) o.glowIntensity = v / 100; paint() end, PercentFmt, 100), 6)
+    local row = CreateFrame("Frame", nil, p)
+    row:SetSize(100, 26)
+    local l = UI.Text(row, 12)
+    l:SetPoint("LEFT", 0, 0)
+    l:SetText(T("Custom glow color"))
+    local sw = UI.Swatch(row, 20, function() return o.glowColor end, function(r, g, b)
+        o.glowColor = { r, g, b }
+        paint()
+    end)
+    sw:SetPoint("RIGHT", 0, 0)
+    row.Refresh = function() sw:Refresh() end
+    Put(p, "L", row, 6)
+    Check(p, "L", "Pulsing glow", o, "glowPulse", paint)
+    Check(p, "L", "Flash on whispers, guild and group messages", o, "flash", nil, "Flash",
+        "The glow briefly flares up when a private, guild or group message arrives.")
+    Check(p, "L", "Animated style effects", o, "animate", paint, "Animated style effects",
+        "For example the scan line in the Cyberpunk style.")
+
+    local rail = o.rail
+    Put(p, "R", UI.Header(p, "Left panel", 100), 8)
+    Check(p, "R", "Show the left panel", rail, "enabled", apply, "Left panel",
+        "A column on the left side of the chatbox with the emoji picker and online counts.")
+    Check(p, "R", "Emoji picker button", rail, "emoji", apply)
+    Check(p, "R", "Messenger button (unread count)", rail, "dm", apply)
+    Check(p, "R", "Friends online", rail, "friends", apply)
+    Check(p, "R", "Guild members online", rail, "guild", apply, "Guild members online",
+        "Only shown while you are in a guild.")
+    Sync(p)
+
+    Header(p, "Chat bar placement")
+    Label(p, "L", "Chat bar")
+    Put(p, "L", UI.Dropdown(p, 100, {
+        { text = "Detached (free-floating)", value = "NONE" },
+        { text = "Inside the chatbox: top", value = "TOP" },
+        { text = "Inside the chatbox: bottom", value = "BOTTOM" },
+        { text = "Inside the chatbox: left", value = "LEFT" },
+        { text = "Inside the chatbox: right", value = "RIGHT" },
+    }, function() return o.dock end, function(v) ns.Chatbox:SetDock(v) end), 8)
+    Note(p, "L", "Docked, the bar wraps to the chat window's size and uses the chatbox as its background. Move it with the sliders or with the reposition button.", 64)
+
+    local function moved() if ns.Chatbox:DockSide() then ns.Chatbox:AnchorBar(ns.Bar.frame) end end
+    Put(p, "R", UI.Slider(p, "Docked bar: horizontal offset", -300, 300, 1, function() return o.dockX or 0 end,
+        function(v) o.dockX = v; moved() end, nil, 100), 6)
+    Put(p, "R", UI.Slider(p, "Docked bar: vertical offset", -300, 300, 1, function() return o.dockY or 0 end,
+        function(v) o.dockY = v; moved() end, nil, 100), 8)
+    Put(p, "R", UI.Button(p, "Reposition the bar (drag)", 170, 26, function() ns.Bar:SetMoveMode(true) end), 6)
+    Put(p, "R", UI.Button(p, "Reset offset", 170, 26, function()
+        o.dockX, o.dockY = 0, 0
+        moved()
+    end), 4)
+end
+
+---------------------------------------------------------------------------
+-- Chat look (emoji, icons, colors, highlights)
+---------------------------------------------------------------------------
+local function CheckSwatch(p, side, label, tbl, after)
+    local row = CreateFrame("Frame", nil, p)
+    row:SetSize(100, 26)
+    local c = UI.Check(row, label, function() return tbl.on end,
+        function(v) tbl.on = v; after() end, nil, nil, 150)
+    c:SetPoint("LEFT", 0, 0)
+    local sw = UI.Swatch(row, 20, function() return tbl.color end, function(r, g, b)
+        tbl.color[1], tbl.color[2], tbl.color[3] = r, g, b
+        after()
+    end)
+    sw:SetPoint("RIGHT", 0, 0)
+    row.Refresh = function() c:Refresh(); sw:Refresh() end
+    return Put(p, side, row, 4)
+end
+
+local function BuildLooks()
+    local p = NewPage("looks", "Chat Look", "Chat Look", "Emoji, icons, colors and highlighted players in your chat windows.")
+    local o = ns.db.chatbox
+    local h = o.highlight
+    local rebuild = function() ns.Chatbox:RebuildHighlight() end
+
+    Check(p, "L", "Emoji for :) ;) :D <3 ...", o, "emoji", nil, "Emoji",
+        "Text smileys are replaced by pictures in chat and in the messenger. New messages only.")
+    Check(p, "L", "Lone ) and ( count as :) and :(", o, "emojiLone", nil, "Lone brackets",
+        "\"hello)\" becomes a smile and \"hello(\" a sad face. Brackets that belong together are left alone.")
+    Put(p, "L", UI.Slider(p, "Emoji size", 12, 32, 1, function() return o.emojiSize end,
+        function(v) o.emojiSize = v end, nil, 100), 8)
+    Put(p, "L", UI.Check(p, "Show timestamps",
+        function() return ns.Chatbox:TimestampsOn() end,
+        function(v) ns.Chatbox:SetTimestamps(v) end,
+        "Timestamps", "Shares the setting of the Chat page, where you can pick the format."), 4)
+    Check(p, "L", "Disable class-colored names", o, "noClassColor", nil, "Disable class-colored names",
+        "Removes class colors from player names in new messages.")
+    Check(p, "L", "Class icons before names", o, "classIcons", nil, "Class icons",
+        "Needs the class to be known: it is learned from the player's messages.")
+    Check(p, "L", "Class icons in circles", o, "classIconsRound", function()
+        if ns.Messenger then ns.Messenger:Refresh() end
+    end, "Class icons in circles", "Round icons in chat and in the messenger. Evokers keep the square icon in chat.")
+    Check(p, "L", "Item level in item links", o, "itemLevel", nil, "Item level in item links",
+        "Shows the item level of linked weapons and armor: [Sword (489)]. Works once the game knows the item.")
+    Check(p, "L", "Faction icons (Horde / Alliance)", o, "factionIcons", nil, "Faction icons",
+        "Shown only when the faction can be identified (from the player's race).")
+
+    Put(p, "R", UI.Header(p, "Highlight players", 100), 8)
+    Check(p, "R", "Highlight messages of chosen players", h, "enabled", rebuild)
+    CheckSwatch(p, "R", "Friends", h.friends, rebuild)
+    CheckSwatch(p, "R", "Guild members", h.guild, rebuild)
+    CheckSwatch(p, "R", "Party / raid members", h.group, rebuild)
+
+    local row = CreateFrame("Frame", nil, p)
+    row:SetSize(100, 26)
+    local l = UI.Text(row, 12)
+    l:SetPoint("LEFT", 0, 0)
+    l:SetText("Color for the list below")
+    local sw = UI.Swatch(row, 20, function() return h.custom.color end, function(r, g, b)
+        h.custom.color[1], h.custom.color[2], h.custom.color[3] = r, g, b
+        rebuild()
+    end)
+    sw:SetPoint("RIGHT", 0, 0)
+    row.Refresh = function() sw:Refresh() end
+    Put(p, "R", row, 6)
+
+    Label(p, "R", "Players (one per line, optional color: Name #ff8800)")
+    local edit = UI.MultiEdit(p, 100, 84, function(text) h.custom.text = text; rebuild() end)
+    edit.Refresh = function(self) self:SetValue(h.custom.text) end
+    Put(p, "R", edit, 6)
+    Put(p, "R", UI.Button(p, "Add my target", 110, 24, function()
+        ns.Chatbox:HighlightTarget(false)
+        edit:SetValue(h.custom.text)
+    end), 4)
+end
+
+---------------------------------------------------------------------------
+-- Messenger
+---------------------------------------------------------------------------
+local function BuildMessenger()
+    local p = NewPage("messenger", "Messenger", "Messenger", "Whispers and Battle.net chats in a messaging-app window, with saved history.")
+    local o = ns.db.messenger
+    local barRefresh = function() if ns.Bar and ns.Bar.frame then ns.Bar:Refresh() end end
+
+    Check(p, "L", "Enable messenger", o, "enabled", barRefresh)
+    Check(p, "L", "Show whispers here, not in chat", o, "hideInChat", nil, "Show whispers here, not in chat",
+        "Private messages are removed from the chat window and only appear in the messenger.")
+    Check(p, "L", "Include Battle.net whispers", o, "bnet")
+    Check(p, "L", "Open for new whispers / reply key", o, "takeover", nil, "Open for new whispers / reply key",
+        "Choosing Whisper on a name, or pressing the reply key, opens the messenger instead of the chat box.")
+    Check(p, "L", "Open when a message arrives", o, "autoOpen")
+    Check(p, "L", "Play a sound", o, "sound")
+    Check(p, "L", "Chat notice with [Open] link", o, "notify", nil, "Chat notice",
+        "Shown once per conversation while the messenger is closed.")
+
+    Label(p, "R", "Keep history for")
+    Put(p, "R", UI.Dropdown(p, 100, {
+        { text = "This session only", value = 0 },
+        { text = "1 day", value = 1 },
+        { text = "3 days", value = 3 },
+        { text = "7 days", value = 7 },
+        { text = "14 days", value = 14 },
+        { text = "30 days", value = 30 },
+        { text = "90 days", value = 90 },
+        { text = "Forever", value = 3650 },
+    }, function() return o.retention end, function(v) o.retention = v; ns.Messenger:Prune(); ns.Messenger:Refresh() end), 10)
+    Put(p, "R", UI.Slider(p, "Messages kept per conversation", 50, 1000, 50, function() return o.maxPerChat end,
+        function(v) o.maxPerChat = v; ns.Messenger:Prune() end, nil, 100), 6)
+    Put(p, "R", UI.Slider(p, "Message font size", 10, 20, 1, function() return o.fontSize end,
+        function(v) o.fontSize = v; ns.Messenger:RenderMessages() end, nil, 100), 8)
+    Put(p, "R", UI.Button(p, "Open messenger", 110, 28, function() ns.Messenger:Open() end, true), 6)
+    Put(p, "R", UI.Button(p, "Delete all history...", 110, 26, function()
+        StaticPopup_Show("ZTVCHAT_CLEARALL")
+    end), 8)
+    Sync(p)
+
+    local info = UI.Text(p, 11, C.muted)
+    info:SetPoint("TOPLEFT", p, "TOPLEFT", 24, -p.L.y - 8)
+    info:SetPoint("TOPRIGHT", p, "TOPRIGHT", -24, -p.L.y - 8)
+    info:SetWordWrap(true)
+    info:SetJustifyV("TOP")
+    info:SetText("History is stored as plain text in this character's saved variables. Messages are only collected while the messenger is enabled. In some fights and Mythic+ runs the game hides message text from addons; those messages stay in the normal chat window. Favorite conversations are never cleaned up automatically. Commands: /messenger [name]")
 end
 
 ---------------------------------------------------------------------------
@@ -361,8 +668,19 @@ local function BuildGeneral()
     end), 8)
     Sync(p)
 
-    Check(p, "L", "Answer !key requests", ns.db.key, "enabled", nil,
-        "Answer !key requests", "When someone types !key in party, raid, guild or instance chat, your keystone is posted back. Nothing is sent while the game locks addon chat (boss fights, Mythic+, PvP).")
+    Label(p, "L", "Language")
+    Put(p, "L", UI.Dropdown(p, 100, {
+        { text = "English", value = "en" },
+        { text = "Русский", value = "ru" },
+        { text = "Deutsch", value = "de" },
+    }, function() return ns.db.language end, function(v)
+        ns.db.language = v
+        StaticPopup_Show("ZTVCHAT_RELOAD", T("The language changes after reloading the interface. Reload now?"))
+    end), 8)
+    Sync(p)
+
+    if ns.Key:IsAvailable() then Check(p, "L", "Answer !key requests", ns.db.key, "enabled", nil,
+        "Answer !key requests", "When someone types !key in party, raid, guild or instance chat, your keystone is posted back. Nothing is sent while the game locks addon chat (boss fights, Mythic+, PvP).") end
     Put(p, "R", UI.Button(p, "Reset all settings...", 100, 26, function()
         StaticPopup_Show("ZTVCHAT_RESET")
     end), 8)
@@ -375,9 +693,11 @@ local function BuildGeneral()
     cmds:SetWordWrap(true)
     cmds:SetJustifyV("TOP")
     cmds:SetSpacing(5)
-    cmds:SetText(table.concat({
+    local lines = {
         "/ztv  -  open settings (also /chathelper and /freechat)",
         "/ztv reset  -  reset all settings",
+        "/chatbox  -  chatbox settings;  /messenger [name]  -  open the messenger",
+        "/ztvhl [target | add name | remove name | list]  -  highlighted players",
         "/copy [add | clear | show]  -  copy window",
         "/spam [add word | remove word | list | on | off]  -  spam filter",
         "/key  -  ask the group for keystones",
@@ -385,7 +705,9 @@ local function BuildGeneral()
         "/boomchat /boomrotate /boomtext  -  toggle bar, layout, letters",
         "/boomsize n /boomup n /boomdown n /boomreset  -  size and position",
         "/hidereidchaton /hidereidchatoff  -  bubbles in instances",
-    }, "\n"))
+    }
+    for i, line in ipairs(lines) do lines[i] = T(line) end
+    cmds:SetText(table.concat(lines, "\n"))
 end
 
 ---------------------------------------------------------------------------
@@ -454,7 +776,7 @@ function Config:Build()
     local version = UI.Text(side, 11, C.muted)
     version:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
     local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-    version:SetText("Version " .. (getMeta and getMeta(ADDON, "Version") or "?"))
+    version:SetText(T("Version") .. " " .. (getMeta and getMeta(ADDON, "Version") or "?"))
 
     content = CreateFrame("Frame", nil, win)
     content:SetPoint("TOPLEFT", 171, -3)
@@ -462,6 +784,10 @@ function Config:Build()
 
     BuildAppearance()
     BuildBar()
+    BuildChatbox()
+    BuildEffects()
+    BuildLooks()
+    BuildMessenger()
     BuildChat()
     BuildSpam()
     BuildFonts()
@@ -480,7 +806,7 @@ function Config:Build()
         nb.bar:SetWidth(3)
         nb.text = UI.Text(nb, 13)
         nb.text:SetPoint("LEFT", 18, 0)
-        nb.text:SetText(entry.name)
+        nb.text:SetText(T(entry.name))
         nb:SetScript("OnEnter", function(self) self.hover = true; PaintNav(self) end)
         nb:SetScript("OnLeave", function(self) self.hover = false; PaintNav(self) end)
         nb:SetScript("OnClick", function(self) Config:ShowPage(self.key) end)
@@ -535,7 +861,7 @@ end
 
 function Config:OnInit()
     StaticPopupDialogs["ZTVCHAT_RESET"] = {
-        text = "Reset all Chat Helper settings and reload the UI?",
+        text = T("Reset all Chat Helper settings and reload the UI?"),
         button1 = YES,
         button2 = NO,
         OnAccept = function()
@@ -543,6 +869,17 @@ function Config:OnInit()
             ZamestoTVChatDB.migrated = true
             ReloadUI()
         end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["ZTVCHAT_RELOAD"] = {
+        text = "%s",
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function() ReloadUI() end,
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,

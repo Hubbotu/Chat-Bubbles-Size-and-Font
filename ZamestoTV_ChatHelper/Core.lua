@@ -2,12 +2,52 @@ local ADDON, ns = ...
 _G.ZamestoTVChat = ns
 
 ns.name = ADDON
+ns.FONT_DIR = "Interface\\AddOns\\" .. ADDON .. "\\font\\"
 ns.modules = {}
 ns.themeCallbacks = {}
 
 -- Midnight (12.0) can hand addons "secret" strings in restricted situations.
 -- Any string operation on them errors, so every filter checks this first.
 ns.IsSecret = _G.issecretvalue or function() return false end
+
+-- WoW Forever / Mainline 12.x: the old global chat helpers (ChatFrame_*, ChatEdit_*)
+-- are deprecated aliases of ChatFrameUtil functions. Resolve whichever exists, so a
+-- removed alias degrades to "feature skipped" instead of a Lua error.
+function ns.ChatFn(name)
+    local f = _G[name]
+    if f then return f end
+    local util = _G.ChatFrameUtil
+    if util then
+        local short = name:gsub("^ChatFrame_", "")
+        short = short:gsub("^ChatEdit_", "")
+        return util[short]
+    end
+end
+
+function ns.AddChatFilter(event, fn)
+    local util = _G.ChatFrameUtil
+    local add = (util and util.AddMessageEventFilter) or _G.ChatFrame_AddMessageEventFilter
+    if add then add(event, fn) end
+end
+
+-- Text processors: functions (text, chatFrame) -> text that every chat line goes
+-- through right before it is displayed (see the AddMessage hook in Features.lua).
+ns.processors = {}
+function ns.AddProcessor(fn)
+    ns.processors[#ns.processors + 1] = fn
+end
+
+-- hooksecurefunc that never errors when the target does not exist
+function ns.SafeHook(name, fn)
+    if type(_G[name]) == "function" then hooksecurefunc(name, fn) return true end
+    local util = _G.ChatFrameUtil
+    if util then
+        local short = name:gsub("^ChatFrame_", "")
+        short = short:gsub("^ChatEdit_", "")
+        if type(util[short]) == "function" then hooksecurefunc(util, short, fn) return true end
+    end
+    return false
+end
 
 ns.presets = {
     { "Azure",   { 0.20, 0.60, 1.00 } },
@@ -32,6 +72,8 @@ ns.defaults = {
         size = 22, spacing = 4, perLine = 8, scale = 1, fade = 1,
         pos = { point = "CENTER", rel = "CENTER", x = 10, y = 170 },
         hidden = {},
+        builtinChannels = true,   -- buttons for 1 General, 2 Trade, 3 Defense ...
+        channelMode = "MENU",     -- MENU = one "Channels" button with a menu, BUTTONS = numbered buttons
     },
     chat = {
         timestamps = "DEFAULT",
@@ -45,6 +87,7 @@ ns.defaults = {
         font = "DEFAULT",
         keywords = { enabled = false, text = "", name = true, sound = true, color = { 1, 0.82, 0 } },
     },
+    language = "en",              -- en / ru / de
     key = { enabled = true },
     spam = { enabled = true, text = "", words = {}, dedupe = false, dedupeSeconds = 15, whitelist = true },
     bubbles = {
@@ -52,6 +95,54 @@ ns.defaults = {
         types = { party = true, raid = true, pvp = true, arena = true },
     },
     copy = { strip = true },
+    chatbox = {
+        enabled = true,
+        style = "MODERN",         -- see Chatbox.styles
+        alpha = 0.75,             -- background opacity
+        texStrength = 1,          -- strength of the pattern overlays (grid, scanlines, grain ...)
+        glowMode = "STYLE",       -- OFF / STYLE / ACCENT / RGB / CUSTOM
+        glowIntensity = 1, glowPulse = false, glowColor = { 0.4, 0.75, 1 },
+        flash = true,             -- the glow flashes when a whisper / guild / group message arrives
+        animate = true,           -- animated style effects (scan sweep ...)
+        rail = { enabled = true, width = 38, emoji = true, dm = true, friends = true, guild = true },
+        recentEmoji = {},
+        itemLevel = true,         -- item level next to linked gear
+        classIconsRound = false,  -- class icons in circles
+        border = true,
+        bgTexture = "NONE",       -- NONE / GRADIENT / carbon / diamond / stars / parchment / metal / leather / CUSTOM
+        bgStrength = 1,
+        bgCustom = "",
+        bgTile = true,
+        padding = 6,
+        includeTabs = true,
+        skinEdit = true,
+        dock = "NONE",            -- NONE / TOP / BOTTOM / LEFT / RIGHT : chat bar inside the chatbox
+        dockX = 0, dockY = 0,     -- offset of the docked chat bar
+        emoji = true, emojiSize = 16, emojiLone = true,
+        classIcons = false, factionIcons = false,
+        noClassColor = false,
+        highlight = {
+            enabled = false,
+            friends = { on = true, color = { 0.35, 1, 0.55 } },
+            guild   = { on = false, color = { 0.45, 0.9, 0.45 } },
+            group   = { on = false, color = { 0.55, 0.75, 1 } },
+            custom  = { text = "", color = { 1, 0.6, 0.2 } },
+        },
+    },
+    messenger = {
+        enabled = true,
+        hideInChat = true,        -- whispers are shown in the messenger instead of the chat window
+        bnet = true,              -- include Battle.net whispers
+        takeover = true,          -- "Whisper" / R key open the messenger instead of the chat box
+        autoOpen = false,         -- open the messenger when a message arrives
+        sound = true,
+        notify = true,            -- chat notice with an [Open] link while the messenger is closed
+        retention = 7,            -- days to keep history (0 = this session only, 3650 = forever)
+        maxPerChat = 300,
+        fontSize = 13,
+        ui = { w = 680, h = 450 },
+        history = {},
+    },
 }
 
 local function DeepCopy(t)
@@ -110,7 +201,9 @@ function ns:OnTheme(fn)
 end
 
 function ns:Print(msg)
-    print("|cff" .. ns.Hex(self:GetAccent()) .. "Chat Helper|r: " .. tostring(msg))
+    msg = tostring(msg)
+    if ns.T then msg = ns.T(msg) end
+    print("|cff" .. ns.Hex(self:GetAccent()) .. "Chat Helper|r: " .. msg)
 end
 
 function ns:NewModule(name)
@@ -181,11 +274,19 @@ ev:SetScript("OnEvent", function(self, event, arg1)
         end
         Merge(ns.db, ns.defaults)
         Migrate(ns.db)
+        -- one-time: the layered skin engine needs a more opaque default
+        if not ns.db.skinV2 then
+            ns.db.chatbox.alpha = 0.75
+            ns.db.skinV2 = true
+        end
         -- one-time: earlier versions defaulted to a visible background panel
         if not ns.db.bgReset then
             ns.db.theme.bgAlpha = 0
             ns.db.bgReset = true
         end
+        -- the background list was reduced to a few bold patterns: map old values
+        local okBG = { NONE = 1, GRADIENT = 1, carbon = 1, diamond = 1, stars = 1, parchment = 1, metal = 1, leather = 1, CUSTOM = 1 }
+        if not okBG[ns.db.chatbox.bgTexture] then ns.db.chatbox.bgTexture = "NONE" end
         RunModules("OnInit")
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then

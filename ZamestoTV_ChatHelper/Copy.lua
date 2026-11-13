@@ -3,6 +3,7 @@ local UI = ns.UI
 local C = UI.C
 local Copy = ns:NewModule("Copy")
 local issecret = ns.IsSecret
+local T = ns.T
 
 local frame
 local state = { tab = 1, lines = {}, hidden = 0, search = "" }
@@ -61,12 +62,12 @@ local function Render()
     local body = table.concat(parts, "\n")
     if #parts == 0 and #state.lines == 0 then
         body = (state.hidden > 0)
-            and "Chat is restricted right now (instance or encounter), so these lines can't be copied."
+            and T("Chat is restricted right now (instance or encounter), so these lines can't be copied.")
             or ""
     end
     frame.edit:SetText(body)
-    local info = #parts .. " lines"
-    if state.hidden > 0 then info = info .. "  |  " .. state.hidden .. " restricted" end
+    local info = #parts .. " " .. T("lines")
+    if state.hidden > 0 then info = info .. "  |  " .. state.hidden .. " " .. T("restricted") end
     frame.info:SetText(info)
     C_Timer.After(0, function()
         frame.scroll:SetVerticalScroll(frame.scroll:GetVerticalScrollRange())
@@ -75,7 +76,7 @@ end
 
 local function TabItems()
     local items = {}
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
         local name, _, _, _, _, _, shown, _, docked = GetChatWindowInfo(i)
         if name and name ~= "" and (shown or docked) then
             items[#items + 1] = { text = name, value = i }
@@ -109,7 +110,7 @@ local function Build()
 
     f.title = UI.Text(f, 14)
     f.title:SetPoint("TOPLEFT", 16, -14)
-    f.title:SetText("Copy Chat")
+    f.title:SetText(T("Copy Chat"))
 
     f.tabs = UI.Dropdown(f, 150, TabItems,
         function() return state.tab end,
@@ -124,7 +125,7 @@ local function Build()
     end)
     f.searchHint = UI.Text(f.search, 11, C.muted)
     f.searchHint:SetPoint("LEFT", 8, 0)
-    f.searchHint:SetText("Search...")
+    f.searchHint:SetText(T("Search..."))
     f.search:HookScript("OnTextChanged", function(self) f.searchHint:SetShown(self:GetText() == "") end)
 
     f.close = CreateFrame("Button", nil, f)

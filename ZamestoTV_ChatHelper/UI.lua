@@ -3,7 +3,48 @@ local UI = {}
 ns.UI = UI
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local FONT = STANDARD_TEXT_FONT
+local T = ns.T
+
+-- Fonts. Not every font file can draw Cyrillic (the default Friz Quadrata cannot on many
+-- clients), so the addon asks the client instead of guessing: a font is accepted only if it
+-- really has the glyphs. The first font that does is used for all addon text.
+local cyrCache, cyrProbe = {}, nil
+function ns.SupportsCyrillic(path)
+    if type(path) ~= "string" then return false end
+    local key = path:lower()
+    if cyrCache[key] ~= nil then return cyrCache[key] end
+    cyrProbe = cyrProbe or UIParent:CreateFontString(nil, "BACKGROUND")
+    local ok, valid = pcall(cyrProbe.SetFont, cyrProbe, path, 24, "")
+    local result = false
+    if ok and valid ~= false then
+        -- a font without the glyphs draws the same empty box for every letter: equal widths
+        local widths, distinct = {}, 0
+        for _, ch in ipairs({ "Ж", "Ш", "Ю", "Щ", "Л", "ы" }) do
+            cyrProbe:SetText(ch)
+            local w = math.floor((cyrProbe:GetStringWidth() or 0) * 10 + 0.5)
+            if not widths[w] then widths[w] = true; distinct = distinct + 1 end
+        end
+        result = distinct >= 2
+    end
+    cyrCache[key] = result
+    return result
+end
+
+local uiFont
+function UI.Font()
+    if uiFont then return uiFont end
+    for _, path in ipairs({ STANDARD_TEXT_FONT, "Fonts\\FRIZQT___CYR.TTF", "Fonts\\ARIALN.TTF" }) do
+        if ns.SupportsCyrillic(path) then uiFont = path return uiFont end
+    end
+    uiFont = STANDARD_TEXT_FONT
+    return uiFont
+end
+
+-- keeps a wanted font (e.g. the chat font) if it can show Cyrillic, otherwise falls back
+function UI.FontFor(path)
+    if path and ns.SupportsCyrillic(path) then return path end
+    return UI.Font()
+end
 
 local C = {
     bg     = { 0.055, 0.058, 0.075, 0.98 },
@@ -27,7 +68,7 @@ end
 
 function UI.Text(parent, size, color, layer)
     local fs = parent:CreateFontString(nil, layer or "OVERLAY")
-    fs:SetFont(FONT, size or 12, "")
+    fs:SetFont(UI.Font(), size or 12, "")
     fs:SetTextColor(unpack(color or C.text))
     fs:SetJustifyH("LEFT")
     return fs
@@ -37,8 +78,8 @@ function UI.Tip(f, title, text)
     if not title then return end
     f:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(title, 1, 1, 1)
-        if text then GameTooltip:AddLine(text, 0.8, 0.8, 0.8, true) end
+        GameTooltip:SetText(T(title), 1, 1, 1)
+        if text then GameTooltip:AddLine(T(text), 0.8, 0.8, 0.8, true) end
         GameTooltip:Show()
     end)
     f:HookScript("OnLeave", function() GameTooltip:Hide() end)
@@ -49,7 +90,7 @@ function UI.Header(parent, text, width)
     h:SetSize(width or 500, 24)
     h.label = UI.Text(h, 12)
     h.label:SetPoint("TOPLEFT", 0, 0)
-    h.label:SetText(text)
+    h.label:SetText(T(text))
     h.line = h:CreateTexture(nil, "ARTWORK")
     h.line:SetColorTexture(1, 1, 1, 0.08)
     h.line:SetPoint("BOTTOMLEFT", 0, 2)
@@ -90,7 +131,7 @@ function UI.Button(parent, label, w, h, onClick, primary)
     b:SetSize(w, h)
     b.text = UI.Text(b, 12)
     b.text:SetPoint("CENTER")
-    b.text:SetText(label)
+    b.text:SetText(T(label))
     b.primary = primary
 
     local function Paint()
@@ -108,7 +149,7 @@ function UI.Button(parent, label, w, h, onClick, primary)
     b:SetScript("OnClick", function(self, ...) if onClick then onClick(self, ...) end end)
     ns:OnTheme(Paint)
     Paint()
-    function b:SetLabel(t) self.text:SetText(t) end
+    function b:SetLabel(t) self.text:SetText(T(t)) end
     return b
 end
 
@@ -129,7 +170,7 @@ function UI.Check(parent, label, getter, setter, tipTitle, tipText, width)
     c.label:SetPoint("LEFT", c.box, "RIGHT", 8, 0)
     c.label:SetPoint("RIGHT", 0, 0)
     c.label:SetWordWrap(false)
-    c.label:SetText(label)
+    c.label:SetText(T(label))
 
     function c:Refresh() self.tick:SetShown(getter() and true or false) end
     c:SetScript("OnClick", function(self) setter(not getter()); self:Refresh() end)
@@ -153,7 +194,7 @@ function UI.Slider(parent, label, minV, maxV, step, getter, setter, fmt, width)
     s:SetSize(width, 40)
     s.label = UI.Text(s, 11, C.muted)
     s.label:SetPoint("TOPLEFT", 0, 0)
-    s.label:SetText(label)
+    s.label:SetText(T(label))
     s.value = UI.Text(s, 11)
     s.value:SetPoint("TOPRIGHT", 0, 0)
     s.value:SetJustifyH("RIGHT")
@@ -280,7 +321,7 @@ local function GetPopup()
             end
             local it = self.items[i + self.offset]
             row.item = it
-            row.text:SetText(it.text)
+            row.text:SetText(T(it.text))
             local r, g, b = ns:GetAccent()
             row.hl:SetColorTexture(r, g, b, 0.22)
             row.sel:SetColorTexture(r, g, b, 1)
@@ -313,7 +354,7 @@ function UI.Dropdown(parent, width, items, getter, setter)
         local v = getter()
         local label = tostring(v)
         for _, it in ipairs(GetItems()) do
-            if it.value == v then label = it.text break end
+            if it.value == v then label = T(it.text) break end
         end
         self.text:SetText(label)
     end
@@ -338,7 +379,7 @@ function UI.Edit(parent, w, h, onEnter)
     local e = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     e:SetSize(w, h or 24)
     e:SetAutoFocus(false)
-    e:SetFont(FONT, 12, "")
+    e:SetFont(UI.Font(), 12, "")
     e:SetTextColor(unpack(C.text))
     e:SetTextInsets(8, 8, 0, 0)
     UI.Flat(e, C.field, C.border)
@@ -366,7 +407,7 @@ function UI.MultiEdit(parent, w, h, onChange)
     local eb = CreateFrame("EditBox", nil, sf)
     eb:SetMultiLine(true)
     eb:SetAutoFocus(false)
-    eb:SetFont(FONT, 12, "")
+    eb:SetFont(UI.Font(), 12, "")
     eb:SetTextColor(unpack(C.text))
     eb:SetWidth(w - 16)
     sf:SetScrollChild(eb)

@@ -1,6 +1,7 @@
 local ADDON, ns = ...
 local Spam = ns:NewModule("Spam")
 local issecret = ns.IsSecret
+local T = ns.T
 
 ns.spamBlocked = 0
 
@@ -107,7 +108,7 @@ local function Filter(self, event, msg, author, ...)
 end
 
 function Spam:OnInit()
-    for _, e in ipairs(EVENTS) do ChatFrame_AddMessageEventFilter(e, Filter) end
+    for _, e in ipairs(EVENTS) do ns.AddChatFilter(e, Filter) end
 
     SLASH_ZTVSPAM1 = "/spam"
     SlashCmdList["ZTVSPAM"] = function(msg)
@@ -115,14 +116,14 @@ function Spam:OnInit()
         cmd = cmd:lower()
         local o = ns.db.spam
         if cmd == "add" then
-            ns:Print(Spam:AddWord(rest) and ("Added \"" .. rest .. "\" to the spam list.") or "Nothing added (empty or already listed).")
+            ns:Print(Spam:AddWord(rest) and string.format(T("Added \"%s\" to the spam list."), rest) or "Nothing added (empty or already listed).")
         elseif cmd == "remove" or cmd == "del" then
-            ns:Print(Spam:RemoveWord(rest) and ("Removed \"" .. rest .. "\".") or "That word is not in the list.")
+            ns:Print(Spam:RemoveWord(rest) and string.format(T("Removed \"%s\"."), rest) or "That word is not in the list.")
         elseif cmd == "list" then
-            ns:Print(#o.words > 0 and ("Blocked: " .. table.concat(o.words, ", ")) or "The spam list is empty.")
+            ns:Print(#o.words > 0 and string.format(T("Blocked: %s"), table.concat(o.words, ", ")) or "The spam list is empty.")
         elseif cmd == "on" or cmd == "off" then
             o.enabled = (cmd == "on")
-            ns:Print("Spam filter " .. (o.enabled and "enabled." or "disabled."))
+            ns:Print(o.enabled and "Spam filter enabled." or "Spam filter disabled.")
         else
             ns.Config:Open("spam")
         end
