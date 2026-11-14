@@ -8,7 +8,7 @@ local win, content
 local pages, order, navs = {}, {}, {}
 local current
 
-local KEYS = { appearance = true, bar = true, chatbox = true, effects = true, looks = true, messenger = true, chat = true, spam = true, fonts = true, general = true }
+local KEYS = { appearance = true, bar = true, chatbox = true, effects = true, looks = true, messenger = true, chat = true, spam = true, fonts = true, general = true, profiles = true }
 local MIN_W, MIN_H, MAX_W, MAX_H = 640, 460, 1200, 900
 
 ---------------------------------------------------------------------------
@@ -569,6 +569,112 @@ local function BuildMessenger()
 end
 
 ---------------------------------------------------------------------------
+-- Profiles (account-wide: save on one character, load on another)
+---------------------------------------------------------------------------
+local function BuildProfiles()
+    local p = NewPage("profiles", "Profiles", "Profiles", "Save your settings under a name and load them on any character of this account.")
+    local Prof = ns.Profiles
+    local sel = ns.db.profileName
+    if not (sel and Prof:Exists(sel)) then sel = Prof:Names()[1] end
+
+    local nameEdit, drop, info, useNew
+
+    local function RefreshAll()
+        if drop then drop:Refresh() end
+        if info then info:Refresh() end
+        if useNew then useNew:Refresh() end
+    end
+
+    local function Confirm(message, onAccept)
+        StaticPopup_Show("ZTVCHAT_CONFIRM", message, nil, onAccept)
+    end
+
+    -- left: save ---------------------------------------------------------------
+    Label(p, "L", "Profile name")
+    nameEdit = UI.Edit(p, 100, 24)
+    nameEdit:SetMaxLetters(40)
+    nameEdit.Refresh = function(self) if self:GetText() == "" then self:SetText(ns.db.profileName or "") end end
+    Put(p, "L", nameEdit, 8)
+    Put(p, "L", UI.Button(p, "Save profile", 140, 28, function()
+        local name = (nameEdit:GetText() or ""):match("^%s*(.-)%s*$")
+        if name == "" then
+            ns:Print(T("Enter a profile name first."))
+            return
+        end
+        local function Do()
+            Prof:Save(name)
+            sel = name
+            ns:Print(string.format(T("Profile \"%s\" saved."), name))
+            RefreshAll()
+        end
+        if Prof:Exists(name) then
+            Confirm(string.format(T("A profile named \"%s\" already exists. Overwrite it?"), name), Do)
+        else
+            Do()
+        end
+    end, true), 8)
+    Note(p, "L", "Saves every setting of this character under that name. An existing profile with the same name is overwritten. The messenger history is not part of a profile.", 88)
+
+    -- right: load ---------------------------------------------------------------
+    Label(p, "R", "Saved profiles")
+    drop = UI.Dropdown(p, 100, function()
+        local items = {}
+        for _, n in ipairs(Prof:Names()) do items[#items + 1] = { text = n, value = n } end
+        if #items == 0 then items[1] = { text = "(no profiles yet)", value = "" } end
+        return items
+    end, function() return sel or "" end, function(v)
+        sel = (v ~= "" and v) or nil
+        if sel then nameEdit:SetText(sel) end
+        RefreshAll()
+    end)
+    Put(p, "R", drop, 8)
+
+    info = UI.Text(p, 11, C.muted)
+    info:SetHeight(44)
+    info:SetWordWrap(true)
+    info:SetJustifyV("TOP")
+    info.Refresh = function(self)
+        local lines = {}
+        if sel and Prof:Exists(sel) then
+            local by, when = Prof:Info(sel)
+            lines[#lines + 1] = string.format(T("Saved by %s on %s"), by, when)
+        end
+        lines[#lines + 1] = ns.db.profileName
+            and string.format(T("This character last used: %s"), ns.db.profileName)
+            or T("This character has not used a profile yet.")
+        self:SetText(table.concat(lines, "\n"))
+    end
+    Put(p, "R", info, 6)
+
+    Put(p, "R", UI.Button(p, "Load profile", 140, 28, function()
+        if not (sel and Prof:Exists(sel)) then
+            ns:Print(T("Choose a profile first."))
+            return
+        end
+        local name = sel
+        Confirm(string.format(T("Load profile \"%s\"? The settings of this character will be replaced and the interface will reload."), name), function()
+            if Prof:Apply(name) then ReloadUI() end
+        end)
+    end, true), 6)
+    Put(p, "R", UI.Button(p, "Delete profile", 140, 26, function()
+        if not (sel and Prof:Exists(sel)) then return end
+        local name = sel
+        Confirm(string.format(T("Delete the profile \"%s\"?"), name), function()
+            Prof:Delete(name)
+            sel = Prof:Names()[1]
+            RefreshAll()
+        end)
+    end), 8)
+
+    useNew = UI.Check(p, "Use this profile for new characters",
+        function() return sel ~= nil and Prof:IsDefault(sel) end,
+        function(v) if sel then Prof:SetDefault(v and sel or nil) end end,
+        "Use this profile for new characters",
+        "A character that has never used the addon starts with this profile instead of the defaults.")
+    Put(p, "R", useNew, 4)
+end
+
+---------------------------------------------------------------------------
 -- Spam filter
 ---------------------------------------------------------------------------
 local function BuildSpam()
@@ -792,11 +898,12 @@ function Config:Build()
     BuildSpam()
     BuildFonts()
     BuildGeneral()
+    BuildProfiles()
 
     for i, entry in ipairs(order) do
         local nb = CreateFrame("Button", nil, side)
         nb:SetSize(168, 32)
-        nb:SetPoint("TOPLEFT", 1, -76 - (i - 1) * 34)
+        nb:SetPoint("TOPLEFT", 1, -76 - (i - 1) * 32)
         nb.key = entry.key
         nb.bg = nb:CreateTexture(nil, "BACKGROUND")
         nb.bg:SetAllPoints()
@@ -869,6 +976,17 @@ function Config:OnInit()
             ZamestoTVChatDB.migrated = true
             ReloadUI()
         end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["ZTVCHAT_CONFIRM"] = {
+        text = "%s",
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function(_, data) if type(data) == "function" then data() end end,
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,

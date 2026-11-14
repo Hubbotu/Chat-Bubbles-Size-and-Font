@@ -162,6 +162,7 @@ local function Merge(dst, src)
         end
     end
 end
+ns.Merge = Merge
 
 function ns.Hex(r, g, b)
     return string.format("%02x%02x%02x",
@@ -262,8 +263,11 @@ ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON then
+        local fresh = (ZamestoTVChatDB == nil)
         ZamestoTVChatDB = ZamestoTVChatDB or {}
         ns.db = ZamestoTVChatDB
+        -- a character that has never used the addon starts from the account's default profile
+        if fresh and ns.Profiles then ns.Profiles:ApplyDefaultToFresh(ns.db) end
         -- v5.0 stored shape + style separately; fold them into one button style
         local th = ns.db.theme
         if th and th.buttonStyle == nil and (th.shape or th.style) then
