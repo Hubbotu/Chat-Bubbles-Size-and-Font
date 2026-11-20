@@ -72,12 +72,61 @@ end
 ---------------------------------------------------------------------------
 -- Conversations (stored per character in ns.db.messenger.history)
 ---------------------------------------------------------------------------
+-- Battle.net conversations belong to the account, not to a character: they live in
+-- an account-wide saved variable and are attached to whichever character is playing.
+local function SharedBN()
+    ZamestoTVChatShared = ZamestoTVChatShared or {}
+    ZamestoTVChatShared.bn = ZamestoTVChatShared.bn or {}
+    return ZamestoTVChatShared.bn
+end
+
+local function DropConv(key)
+    DB().history[key] = nil
+    SharedBN()[key] = nil
+end
+
+local function MergeConv(dst, src)
+    local seen, all = {}, {}
+    for _, list in ipairs({ dst.msgs or {}, src.msgs or {} }) do
+        for _, msg in ipairs(list) do
+            local id = msg.t .. (msg.o and "o" or "i") .. msg.m
+            if not seen[id] then seen[id] = true; all[#all + 1] = msg end
+        end
+    end
+    table.sort(all, function(a, b) return a.t < b.t end)
+    dst.msgs = all
+    dst.unread = math.max(dst.unread or 0, src.unread or 0)
+    dst.fav = dst.fav or src.fav
+    dst.last = math.max(dst.last or 0, src.last or 0)
+    for _, f in ipairs({ "battletag", "char", "class", "faction", "name" }) do dst[f] = dst[f] or src[f] end
+end
+
+-- At login: move Battle.net conversations that an older version kept per character into
+-- the shared store, then show the shared conversations in this character's list.
+function M:AttachShared()
+    local h, bn = DB().history, SharedBN()
+    for k, c in pairs(h) do
+        if c.kind == "BN" then
+            if bn[k] and bn[k] ~= c then MergeConv(bn[k], c) else bn[k] = c end
+            h[k] = nil
+        end
+    end
+    for k, c in pairs(bn) do h[k] = c end
+end
+
+-- At logout: the character's own saved data keeps only its whispers.
+function M:DetachShared()
+    local h = DB().history
+    for k, c in pairs(h) do if c.kind == "BN" then h[k] = nil end end
+end
+
 function M:GetConv(key, create, kind, name)
     local h = DB().history
     local c = h[key]
     if not c and create then
         c = { key = key, kind = kind, name = name, last = time(), unread = 0, msgs = {} }
         h[key] = c
+        if kind == "BN" then SharedBN()[key] = c end
     end
     return c
 end
@@ -104,7 +153,7 @@ end
 function M:Prune()
     local o = DB()
     if o.retention == 0 then
-        for k, c in pairs(o.history) do if not c.fav then o.history[k] = nil end end
+        for k, c in pairs(o.history) do if not c.fav then DropConv(k) end end
         return
     end
     local cutoff = time() - o.retention * 86400
@@ -116,7 +165,7 @@ function M:Prune()
         end
         while #keep > max do table.remove(keep, 1) end
         if #keep == 0 and not c.fav then
-            o.history[key] = nil
+            DropConv(key)
         else
             c.msgs = keep
         end
@@ -124,7 +173,7 @@ function M:Prune()
 end
 
 function M:Delete(key)
-    DB().history[key] = nil
+    DropConv(key)
     notified[key] = nil
     if state.key == key then state.key = nil end
     self:Refresh()
@@ -133,7 +182,7 @@ end
 
 function M:ClearAll()
     local h = DB().history
-    for k, c in pairs(h) do if not c.fav then h[k] = nil end end   -- favorites stay
+    for k, c in pairs(h) do if not c.fav then DropConv(k) end end   -- favorites stay
     wipe(notified)
     state.key = nil
     self:Refresh()
@@ -1117,8 +1166,9 @@ function M:OnInit()
         if event == "PLAYER_LOGOUT" then
             if DB().retention == 0 then
                 local h = DB().history
-                for k, c in pairs(h) do if not c.fav then h[k] = nil end end
+                for k, c in pairs(h) do if not c.fav then DropConv(k) end end
             end
+            M:DetachShared()
             return
         end
         local msg, author = ...
@@ -1144,6 +1194,7 @@ function M:OnInit()
 end
 
 function M:OnLogin()
+    self:AttachShared()
     self:Prune()
     refreshBar()
 end

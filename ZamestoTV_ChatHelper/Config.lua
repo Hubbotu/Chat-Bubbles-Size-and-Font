@@ -565,7 +565,7 @@ local function BuildMessenger()
     info:SetPoint("TOPRIGHT", p, "TOPRIGHT", -24, -p.L.y - 8)
     info:SetWordWrap(true)
     info:SetJustifyV("TOP")
-    info:SetText("History is stored as plain text in this character's saved variables. Messages are only collected while the messenger is enabled. In some fights and Mythic+ runs the game hides message text from addons; those messages stay in the normal chat window. Favorite conversations are never cleaned up automatically. Commands: /messenger [name]")
+    info:SetText("Whisper history is stored as plain text in this character's saved variables; Battle.net conversations are stored account-wide and shared by all your characters. Messages are only collected while the messenger is enabled. In some fights and Mythic+ runs the game hides message text from addons; those messages stay in the normal chat window. Favorite conversations are never cleaned up automatically. Commands: /messenger [name]")
 end
 
 ---------------------------------------------------------------------------

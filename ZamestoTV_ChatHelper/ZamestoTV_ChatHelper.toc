@@ -1,10 +1,10 @@
-## Interface: 120105
+## Interface: 120105, 120107
 ## Title: Chat Helper
 ## Notes: Chatbox skins, messenger-style whispers and Battle.net chats, emoji, themeable chat bar, copy window, spam filter, clickable links, !key responder and other chat quality-of-life features.
 ## Author: ZamestoTV
-## Version: 5.6.0
+## Version: 5.7.0
 ## SavedVariablesPerCharacter: ZamestoTVChatDB
-## SavedVariables: ZamestoTVChatProfiles, ZamestoTVBubbleScaleDB, SpamFilterDB, FreeChatDB, NoChatBubblesInInstancesDB
+## SavedVariables: ZamestoTVChatProfiles, ZamestoTVChatShared, ZamestoTVBubbleScaleDB, SpamFilterDB, FreeChatDB, NoChatBubblesInInstancesDB
 ## OptionalDeps: LibSharedMedia-3.0
 ## IconTexture: Interface\AddOns\ZamestoTV_ChatHelper\goblin
 
