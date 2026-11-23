@@ -7,12 +7,10 @@ local Auto = ns:NewModule("Automation")
 -- Who is a friend?
 ---------------------------------------------------------------------------
 local function IsBNFriend(name, guid)
-    -- the game can tell directly from the character's guid
     if guid and C_BattleNet and C_BattleNet.GetAccountInfoByGUID then
         local ok, info = pcall(C_BattleNet.GetAccountInfoByGUID, guid)
         if ok and info then return true end
     end
-    -- otherwise compare with the characters the Battle.net friends are playing
     if name and C_BattleNet and C_BattleNet.GetFriendAccountInfo and BNGetNumFriends then
         local short = Ambiguate(name, "short"):lower()
         for i = 1, (BNGetNumFriends()) do
@@ -58,14 +56,26 @@ local function Accept(name)
     return true
 end
 
-local function OnInvite(name, _, _, _, _, _, _, guid)
+
+local function OnInvite(name, _, _, _, _, _, guid)
     local o = ns.db.automation
     if not (o.acceptBN or o.acceptFriends) then return end
     if type(name) ~= "string" or issecret(name) then return end
-    if guid ~= nil and (issecret(guid) or type(guid) ~= "string") then guid = nil end
-    if o.acceptBN and IsBNFriend(name, guid) then Accept(name) return end
-    if o.acceptFriends and IsGameFriend(name, guid) then Accept(name) return end
+    if guid ~= nil and (issecret(guid) or type(guid) ~= "string") then
+        guid = nil
+    end
+
+    if o.acceptBN and IsBNFriend(name, guid) then
+        Accept(name)
+        return
+    end
+
+    if o.acceptFriends and IsGameFriend(name, guid) then
+        Accept(name)
+        return
+    end
 end
+
 
 function Auto:OnInit()
     local f = CreateFrame("Frame")
