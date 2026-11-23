@@ -8,7 +8,7 @@ local win, content
 local pages, order, navs = {}, {}, {}
 local current
 
-local KEYS = { appearance = true, bar = true, chatbox = true, effects = true, looks = true, messenger = true, chat = true, spam = true, fonts = true, general = true, profiles = true }
+local KEYS = { appearance = true, bar = true, chatbox = true, effects = true, looks = true, messenger = true, chat = true, spam = true, fonts = true, general = true, profiles = true, automation = true }
 local MIN_W, MIN_H, MAX_W, MAX_H = 640, 460, 1200, 900
 
 ---------------------------------------------------------------------------
@@ -529,8 +529,15 @@ local function BuildMessenger()
     local barRefresh = function() if ns.Bar and ns.Bar.frame then ns.Bar:Refresh() end end
 
     Check(p, "L", "Enable messenger", o, "enabled", barRefresh)
-    Check(p, "L", "Show whispers here, not in chat", o, "hideInChat", nil, "Show whispers here, not in chat",
+    local cIn, cHide
+    cHide = Check(p, "L", "Show whispers here, not in chat", o, "hideInChat", function(v)
+        if v then o.inChat = false; if cIn then cIn:Refresh() end end
+    end, "Show whispers here, not in chat",
         "Private messages are removed from the chat window and only appear in the messenger.")
+    cIn = Check(p, "L", "Show messages in the chat window instead", o, "inChat", function(v)
+        if v then o.hideInChat = false; if cHide then cHide:Refresh() end end
+    end, "Show messages in the chat window instead",
+        "Private and Battle.net messages appear in the normal chat window, as in the game. The conversation history is still saved and opens in the messenger whenever you want.")
     Check(p, "L", "Include Battle.net whispers", o, "bnet")
     Check(p, "L", "Open for new whispers / reply key", o, "takeover", nil, "Open for new whispers / reply key",
         "Choosing Whisper on a name, or pressing the reply key, opens the messenger instead of the chat box.")
@@ -558,6 +565,10 @@ local function BuildMessenger()
     Put(p, "R", UI.Button(p, "Delete all history...", 110, 26, function()
         StaticPopup_Show("ZTVCHAT_CLEARALL")
     end), 8)
+    Check(p, "R", "Avatars next to messages", o, "showAvatars", function() ns.Messenger:Refresh() end)
+    Put(p, "R", UI.Button(p, "Choose my avatar...", 150, 26, function()
+        ns.Avatars:Pick(o.myAvatar, function(id) o.myAvatar = id; ns.Messenger:Refresh() end)
+    end), 4)
     Sync(p)
 
     local info = UI.Text(p, 11, C.muted)
@@ -565,7 +576,49 @@ local function BuildMessenger()
     info:SetPoint("TOPRIGHT", p, "TOPRIGHT", -24, -p.L.y - 8)
     info:SetWordWrap(true)
     info:SetJustifyV("TOP")
-    info:SetText("Whisper history is stored as plain text in this character's saved variables; Battle.net conversations are stored account-wide and shared by all your characters. Messages are only collected while the messenger is enabled. In some fights and Mythic+ runs the game hides message text from addons; those messages stay in the normal chat window. Favorite conversations are never cleaned up automatically. Commands: /messenger [name]")
+    info:SetText(T("Whisper history is stored as plain text in this character's saved variables; Battle.net conversations are stored account-wide and shared by all your characters. Messages are only collected while the messenger is enabled. In some fights and Mythic+ runs the game hides message text from addons; those messages stay in the normal chat window. Favorite conversations are never cleaned up automatically. Commands: /messenger [name]"))
+end
+
+---------------------------------------------------------------------------
+-- Alerts, auto-reply, group invitations
+---------------------------------------------------------------------------
+local function BuildAutomation()
+    local p = NewPage("automation", "Alerts & Auto", "Alerts & Auto", "Sound alerts for chosen people, an automatic reply and automatic group invitations.")
+    local o = ns.db.messenger
+    local al, ar = o.alert, o.autoReply
+    local auto = ns.db.automation
+
+    -- left: sound alerts -----------------------------------------------------------
+    Put(p, "L", UI.Header(p, "Sound alert for chosen people", 100), 8)
+    Check(p, "L", "Play a special sound for these people", al, "enabled")
+    Label(p, "L", "People (one per line: character or BattleTag name)")
+    local names = UI.MultiEdit(p, 100, 70, function(text) al.names = text end)
+    names.Refresh = function(self) self:SetValue(al.names) end
+    Put(p, "L", names, 6)
+    Label(p, "L", "Sound")
+    Put(p, "L", UI.Dropdown(p, 100, function() return ns.Messenger:SoundList() end,
+        function() return al.sound end, function(v) al.sound = v; ns.Messenger:PlayAlert(v) end), 8)
+    Put(p, "L", UI.Button(p, "Test sound", 120, 26, function() ns.Messenger:PlayAlert(al.sound) end), 4)
+
+    -- right: auto-reply -----------------------------------------------------------------
+    Put(p, "R", UI.Header(p, "Auto-reply", 100), 8)
+    Check(p, "R", "Reply automatically to private messages", ar, "enabled")
+    Label(p, "R", "Reply text")
+    local text = UI.MultiEdit(p, 100, 70, function(t) ar.text = t end)
+    text.Refresh = function(self) self:SetValue(ar.text) end
+    Put(p, "R", text, 6)
+    Check(p, "R", "Only while away or busy (AFK / DND)", ar, "onlyAway", nil, "Only while away or busy (AFK / DND)",
+        "With this on, the reply is sent only when your status is Away or Do Not Disturb (/afk, /dnd).")
+    Check(p, "R", "Also reply to Battle.net messages", ar, "bnet")
+    Put(p, "R", UI.Slider(p, "Reply to the same person at most every (minutes)", 1, 60, 1,
+        function() return ar.cooldown end, function(v) ar.cooldown = v end, nil, 100), 4)
+    Sync(p)
+
+    -- group invitations ---------------------------------------------------------------------
+    Header(p, "Group invitations")
+    Check(p, "L", "Accept invitations from Battle.net friends", auto, "acceptBN")
+    Check(p, "L", "Accept invitations from in-game friends", auto, "acceptFriends")
+    Note(p, "R", "Invitations from these friends are accepted the moment they arrive. Everyone else still gets the normal invitation window.", 56)
 end
 
 ---------------------------------------------------------------------------
@@ -894,6 +947,7 @@ function Config:Build()
     BuildEffects()
     BuildLooks()
     BuildMessenger()
+    BuildAutomation()
     BuildChat()
     BuildSpam()
     BuildFonts()
@@ -903,7 +957,7 @@ function Config:Build()
     for i, entry in ipairs(order) do
         local nb = CreateFrame("Button", nil, side)
         nb:SetSize(168, 32)
-        nb:SetPoint("TOPLEFT", 1, -76 - (i - 1) * 32)
+        nb:SetPoint("TOPLEFT", 1, -76 - (i - 1) * 30)
         nb.key = entry.key
         nb.bg = nb:CreateTexture(nil, "BACKGROUND")
         nb.bg:SetAllPoints()

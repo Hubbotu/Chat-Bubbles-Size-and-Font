@@ -87,6 +87,7 @@ ns.defaults = {
         font = "DEFAULT",
         keywords = { enabled = false, text = "", name = true, sound = true, color = { 1, 0.82, 0 } },
     },
+    automation = { acceptBN = false, acceptFriends = false },   -- accept group invites from friends
     language = "en",              -- en / ru / de
     key = { enabled = true },
     spam = { enabled = true, text = "", words = {}, dedupe = false, dedupeSeconds = 15, whitelist = true },
@@ -132,6 +133,10 @@ ns.defaults = {
     messenger = {
         enabled = true,
         hideInChat = true,        -- whispers are shown in the messenger instead of the chat window
+        inChat = false,           -- ...or show them in the chat window as usual (history is kept either way)
+        showAvatars = true,       -- avatars next to the messages
+        alert = { enabled = false, names = "", sound = "SK:TELL_MESSAGE" },
+        autoReply = { enabled = false, text = "", onlyAway = true, cooldown = 10, bnet = true },
         bnet = true,              -- include Battle.net whispers
         takeover = true,          -- "Whisper" / R key open the messenger instead of the chat box
         autoOpen = false,         -- open the messenger when a message arrives

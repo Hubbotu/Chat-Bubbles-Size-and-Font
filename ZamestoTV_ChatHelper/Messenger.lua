@@ -278,6 +278,118 @@ end
 ---------------------------------------------------------------------------
 -- Incoming / outgoing messages
 ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- Sound alerts for chosen people
+---------------------------------------------------------------------------
+local ALERT_SOUNDS = {
+    { "SK:TELL_MESSAGE", "Whisper", 3081 }, { "SK:RAID_WARNING", "Raid warning", 8959 },
+    { "SK:READY_CHECK", "Ready check", 8960 }, { "SK:ALARM_CLOCK_WARNING_3", "Alarm", 12889 },
+    { "SK:UI_BNET_TOAST", "Battle.net toast", 18019 }, { "SK:IG_QUEST_LIST_COMPLETE", "Quest complete", 878 },
+    { "SK:LEVELUP", "Level up", 888 }, { "SK:MAP_PING", "Map ping", 3175 },
+    { "SK:AUCTION_WINDOW_OPEN", "Auction bell", 5274 },
+}
+
+local function LSM() return _G.LibStub and _G.LibStub("LibSharedMedia-3.0", true) end
+
+function M:SoundList()
+    if self.soundList then return self.soundList end
+    local list = {}
+    for _, s in ipairs(ALERT_SOUNDS) do list[#list + 1] = { text = s[2], value = s[1] } end
+    local lib = LSM()
+    if lib then
+        local names = {}
+        for name in pairs(lib:HashTable("sound")) do names[#names + 1] = name end
+        table.sort(names)
+        for _, name in ipairs(names) do list[#list + 1] = { text = name, value = "LSM:" .. name } end
+    end
+    self.soundList = list
+    return list
+end
+
+function M:PlayAlert(key)
+    if type(key) ~= "string" then key = "SK:TELL_MESSAGE" end
+    local kind, name = key:match("^(%u+):(.+)$")
+    if kind == "SK" then
+        local id = _G.SOUNDKIT and SOUNDKIT[name]
+        if not id then for _, s in ipairs(ALERT_SOUNDS) do if s[1] == key then id = s[3] end end end
+        if id then pcall(PlaySound, id, "Master") end
+    elseif kind == "LSM" then
+        local lib = LSM()
+        local path = lib and lib:Fetch("sound", name)
+        if path then pcall(PlaySoundFile, path, "Master") end
+    end
+end
+
+local alertCache = { text = nil, set = {} }
+local function AlertSet()
+    local text = DB().alert.names or ""
+    if alertCache.text ~= text then
+        alertCache.text, alertCache.set = text, {}
+        for raw in text:gmatch("[^\n,;]+") do
+            local n = raw:match("^%s*(.-)%s*$"):lower()
+            if n ~= "" then
+                alertCache.set[n] = true
+                local base = n:match("^[^-#]+")
+                if base then alertCache.set[base] = true end
+            end
+        end
+    end
+    return alertCache.set
+end
+
+function M:AlertMatches(conv)
+    local a = DB().alert
+    if not (a and a.enabled) then return false end
+    local set = AlertSet()
+    if not next(set) then return false end
+    for _, nm in ipairs({ conv.name or "", conv.char or "", conv.battletag or "" }) do
+        local l = nm:lower()
+        if set[l] then return true end
+        local base = l:match("^[^-#]+")
+        if base and set[base] then return true end
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
+-- Auto-reply
+---------------------------------------------------------------------------
+local lastAuto = {}   -- conversation key -> time of the last automatic answer
+
+local function CutUTF8(s, max)
+    if #s <= max then return s end
+    s = s:sub(1, max)
+    while #s > 0 and s:byte(#s) >= 128 and s:byte(#s) < 192 do s = s:sub(1, #s - 1) end -- cut inside a character
+    if #s > 0 and s:byte(#s) >= 192 then s = s:sub(1, #s - 1) end
+    return s
+end
+
+function M:MaybeAutoReply(conv, msg)
+    local a = DB().autoReply
+    if not (a and a.enabled) then return end
+    local text = CutUTF8((a.text or ""):match("^%s*(.-)%s*$"), 250)
+    if text == "" then return end
+    if conv.kind == "BN" and a.bnet == false then return end
+    if a.onlyAway and not (UnitIsAFK("player") or UnitIsDND("player")) then return end
+    if msg == text then return end                       -- the other side runs the same answer: no ping-pong
+    local now = GetTime()
+    local wait = math.max(1, a.cooldown or 10) * 60
+    if lastAuto[conv.key] and now - lastAuto[conv.key] < wait then return end
+    if ChatLocked() then return end
+
+    local ok
+    if conv.kind == "BN" then
+        local id = ResolveBN(conv)
+        if not id then return end
+        local send = (C_BattleNet and C_BattleNet.SendWhisper) or _G.BNSendWhisper
+        ok = send and pcall(send, id, text)
+    else
+        local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
+        ok = pcall(send, text, "WHISPER", nil, conv.name)
+    end
+    if ok then lastAuto[conv.key] = now end
+end
+
 function M:Notify(conv, out)
     local o = DB()
     local visible = frame and frame:IsShown() and state.key == conv.key
@@ -287,7 +399,14 @@ function M:Notify(conv, out)
     end
     if not visible then conv.unread = (conv.unread or 0) + 1 end
 
-    if o.sound and GetTime() - lastSound > 1 then
+    if self:AlertMatches(conv) then
+        -- a person on the alert list: their own sound, always
+        if GetTime() - lastSound > 1 then
+            lastSound = GetTime()
+            self:PlayAlert(o.alert.sound)
+        end
+    elseif o.sound and not o.inChat and GetTime() - lastSound > 1 then
+        -- (in chat-window mode the game plays its own whisper sound)
         lastSound = GetTime()
         pcall(PlaySound, SOUNDKIT.TELL_MESSAGE)
     end
@@ -295,7 +414,7 @@ function M:Notify(conv, out)
     if o.autoOpen and not visible then
         self:Open(conv.key)
     else
-        if o.notify and not visible and not notified[conv.key] then
+        if o.notify and not o.inChat and not visible and not notified[conv.key] then
             notified[conv.key] = true
             ns:Print(string.format(T("New message from %s") .. "  |cff%s|Hztvmsg:%s|h[%s]|h|r",
                 conv.name, ns.Hex(ns:GetAccent()), conv.key, T("Open")))
@@ -332,6 +451,7 @@ function M:OnMessage(event, msg, author, guid, bnID)
 
     self:Add(conv, out, msg)
     self:Notify(conv, out)
+    if not out then self:MaybeAutoReply(conv, msg) end
 end
 
 ---------------------------------------------------------------------------
@@ -502,6 +622,12 @@ local function NewAvatar(parent, size)
 end
 
 local function PaintAvatar(av, conv)
+    -- a picture chosen by the user wins over the class icon / letter
+    if ns.Avatars and ns.Avatars:Apply(av.tex, conv.avatar) then
+        if av.masked then av.tex:RemoveMaskTexture(av.mask); av.masked = false end
+        av.letter:SetText("")
+        return
+    end
     local round = ns.db.chatbox.classIconsRound
     if round and not av.masked then av.tex:AddMaskTexture(av.mask); av.masked = true
     elseif not round and av.masked then av.tex:RemoveMaskTexture(av.mask); av.masked = false end
@@ -727,6 +853,16 @@ local function GetBubble(i)
     if b then return b end
     b = CreateFrame("Button", nil, frame.content, "BackdropTemplate")
     b:RegisterForClicks("LeftButtonUp")
+    b.av = NewAvatar(frame.content, 26)
+    b.av.btn = CreateFrame("Button", nil, b.av)
+    b.av.btn:SetAllPoints()
+    b.av.btn:SetScript("OnClick", function(self) if self.pick then self.pick() end end)
+    b.av.btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(T("Click to choose an avatar"), 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    b.av.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b.text = b:CreateFontString(nil, "OVERLAY")
     b.text:SetJustifyH("LEFT")
     b.text:SetJustifyV("TOP")
@@ -772,7 +908,7 @@ function M:RenderMessages()
     if not frame then return end
     local conv = self:Current()
     local content = frame.content
-    for _, b in ipairs(bubbles) do b:Hide() end
+    for _, b in ipairs(bubbles) do b:Hide(); b.av:Hide() end
     for _, s in ipairs(seps) do s:Hide() end
     frame.empty:SetShown(conv == nil)
     if not conv then content:SetHeight(1) return end
@@ -783,7 +919,11 @@ function M:RenderMessages()
     content:SetWidth(width)
 
     local path, size = FontPath(), o.fontSize
-    local maxText = math.floor(width * 0.72) - 22
+    local showAv = o.showAvatars ~= false
+    local avW = showAv and 34 or 0
+    local maxText = math.floor(width * 0.72) - 22 - avW
+    local me = { name = UnitName("player") or "?", kind = "W", avatar = o.myAvatar, class = select(2, UnitClass("player")) }
+    local prevOut, newRun = nil, true
     local ar, ag, ab = ns:GetAccent()
     local tr, tg, tb = Contrast(ar, ag, ab)
     local emoji = ns.db.chatbox.emoji and ns.Chatbox
@@ -803,6 +943,7 @@ function M:RenderMessages()
             s:SetPoint("TOP", content, "TOP", 0, -y)
             s:Show()
             y = y + 22
+            newRun = true
         end
 
         nb = nb + 1
@@ -836,9 +977,27 @@ function M:RenderMessages()
             b.time:SetTextColor(unpack(C.muted))
         end
         b:ClearAllPoints()
-        if out then b:SetPoint("TOPRIGHT", content, "TOPRIGHT", -12, -y)
-        else b:SetPoint("TOPLEFT", content, "TOPLEFT", 12, -y) end
+        if out then b:SetPoint("TOPRIGHT", content, "TOPRIGHT", -12 - avW, -y)
+        else b:SetPoint("TOPLEFT", content, "TOPLEFT", 12 + avW, -y) end
         b:Show()
+
+        -- the avatar sits next to the first message of a run from the same person
+        local isOut = out and true or false
+        if showAv and (newRun or prevOut ~= isOut) then
+            b.av:ClearAllPoints()
+            if out then b.av:SetPoint("TOPRIGHT", content, "TOPRIGHT", -12, -y)
+            else b.av:SetPoint("TOPLEFT", content, "TOPLEFT", 12, -y) end
+            PaintAvatar(b.av, out and me or conv)
+            b.av.btn.pick = function()
+                if out then
+                    ns.Avatars:Pick(o.myAvatar, function(id) o.myAvatar = id; M:Refresh() end)
+                else
+                    ns.Avatars:Pick(conv.avatar, function(id) conv.avatar = id; M:Refresh() end)
+                end
+            end
+            b.av:Show()
+        end
+        prevOut, newRun = isOut, false
         y = y + bh + 5
     end
     content:SetHeight(y + 10)
@@ -956,6 +1115,18 @@ function M:Build()
     head:SetHeight(54)
     head.av = NewAvatar(head, 36)
     head.av:SetPoint("LEFT", 14, 0)
+    head.avBtn = CreateFrame("Button", nil, head)
+    head.avBtn:SetAllPoints(head.av)
+    head.avBtn:SetScript("OnClick", function()
+        local c = M:Current()
+        if c then ns.Avatars:Pick(c.avatar, function(id) c.avatar = id; M:Refresh() end) end
+    end)
+    head.avBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText(T("Click to choose an avatar"), 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    head.avBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     head.name = UI.Text(head, 15)
     head.name:SetPoint("TOPLEFT", head.av, "TOPRIGHT", 10, -1)
     head.faction = head:CreateTexture(nil, "ARTWORK")
@@ -1108,7 +1279,7 @@ local EVENTS = {
 -- Whispers that the messenger shows are removed from the chat window.
 local function HideFilter(self, event, msg, author)
     local o = DB()
-    if not (o.enabled and o.hideInChat) then return false end
+    if not (o.enabled and o.hideInChat) or o.inChat then return false end
     if type(msg) ~= "string" or issecret(msg) then return false end
     if author ~= nil and issecret(author) then return false end
     if event:find("BN_", 1, true) and not o.bnet then return false end
